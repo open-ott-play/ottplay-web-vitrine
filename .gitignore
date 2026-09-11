@@ -1,0 +1,11 @@
+.herenow/slug
+.herenow/record_id
+.herenow/data.json
+.herenow/proxy.json
+.herenow/state.json
+dist/
+*.env
+.env*
+local.secrets*
+**/credentials
+ottplay-foss-dist.tar.gz
