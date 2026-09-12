@@ -6,13 +6,19 @@ Public **static** OttPlay FOSS web player — a thin vitrine that publishes the 
 
 Upstream player builds: [`open-ott-play/ottplay-foss`](https://github.com/open-ott-play/ottplay-foss) (release asset `ottplay-foss-dist.tar.gz`).
 
+<!-- ci-release-process:start -->
+## CI and deployment
+
+See [CI and deployment workflow](docs/release-workflow.md) for required checks and local commands. This repository uses validation-only policy; application release channels do not apply.
+<!-- ci-release-process:end -->
+
 ## Why this exists
 
 Desktop / Cap / Tauri installs are great for daily use. This repo answers:
 
 > Can someone **try the full FOSS player in a browser** without cloning or paying for App Store / Play?
 
-Yes — publish the static frontend to a stable here.now workspace URL and refresh it on every player release.
+Yes — publish the static frontend to a stable here.now workspace URL and explicitly approve updates from qualified stable player releases.
 
 ## What it is
 
@@ -23,7 +29,7 @@ Yes — publish the static frontend to a stable here.now workspace URL and refre
 | ottplay-foss releases | Source of truth for the built web bundle |
 
 ```text
-ottplay-foss tag/release  →  unpack ottplay-foss-dist.tar.gz
+approved ottplay-foss stable release  →  verify and unpack ottplay-foss-dist.tar.gz
                            →  here.now publish (workspace ottplay)
                            →  https://player.ottplay.here.now/
 ```
@@ -36,32 +42,17 @@ ottplay-foss tag/release  →  unpack ottplay-foss-dist.tar.gz
 
 ## How to update the live site
 
-### A. Automated (preferred)
+### Publish a reviewed stable release
 
-1. Set repo secret **`HERENOW_API_KEY`** (here.now API key with access to workspace `ottplay`).
-2. Optional secrets/vars: `HERENOW_WORKSPACE=ottplay`, `HERENOW_SITE_SLUG=liminal-sketch-vv8r`.
-3. On each `ottplay-foss` GitHub Release (after assets upload), fire `repository_dispatch` type `ottplay-foss-release` at this repo (see [docs/update-on-release.md](docs/update-on-release.md)), **or** run **Actions → Publish here.now → Run workflow**.
-4. The workflow downloads `ottplay-foss-dist.tar.gz`, extracts to `dist/`, and runs [`scripts/publish-herenow.sh`](scripts/publish-herenow.sh).
+1. Configure `HERENOW_API_KEY` in the protected production environment with access to the `ottplay` workspace. Review the workspace and site slug configured in the workflow.
+2. Run **Actions → Publish here.now → Run workflow** from the default branch with an exact stable `vX.Y.Z` tag from `open-ott-play/ottplay-foss`.
+3. Review the deployment and approve its production environment. The workflow verifies the stable archive against its RC manifest, source revision and successful validation run before publishing.
 
-### B. Manual
+Release events and `repository_dispatch` do not publish the site. See the [operator runbook](docs/release-workflow.md) for the repository validation and deployment boundary.
 
-```bash
-# 1) Get a dist tree with index.html at the root
-gh release download -R open-ott-play/ottplay-foss -p ottplay-foss-dist.tar.gz
-mkdir -p dist && tar -xzf ottplay-foss-dist.tar.gz -C dist
-# ensure dist/index.html exists (move nested folder up if needed)
+### Prepare verified artifacts locally
 
-# 2) here.now skill + key
-npx skills add heredotnow/skill --skill here-now -g
-mkdir -p ~/.herenow && chmod 700 ~/.herenow
-# put API key in ~/.herenow/credentials (chmod 600) or export HERENOW_API_KEY
-
-# 3) Publish into the ottplay workspace (update in place)
-export HERENOW_WORKSPACE=ottplay
-export HERENOW_SITE_SLUG=liminal-sketch-vv8r  # Site slug (label remains player)
-./scripts/publish-herenow.sh ./dist
-# if the live Site moved: OVERWRITE=1 ./scripts/publish-herenow.sh ./dist
-```
+In a fresh checkout with no existing `dist/`, run `python3 scripts/prepare-dist.py vX.Y.Z` for the selected stable player release. This verifies and stages the distribution without publishing. Inspect `dist/`; use the protected workflow above to update the live site.
 
 Discover the Site slug (owner API key):
 

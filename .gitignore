@@ -9,3 +9,9 @@ dist/
 local.secrets*
 **/credentials
 ottplay-foss-dist.tar.gz
+
+# Local Python validation caches
+__pycache__/
+*.py[cod]
+
+.ci-tools/
