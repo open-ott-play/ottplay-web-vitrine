@@ -30,45 +30,18 @@ if [[ -n "${HERENOW_API_KEY:-}" ]]; then
   chmod 600 "${HOME}/.herenow/credentials"
 fi
 
-PUBLISH_SH="${HERENOW_PUBLISH_SCRIPT:-}"
-if [[ -z "$PUBLISH_SH" || ! -x "$PUBLISH_SH" ]]; then
-  PUBLISH_SH=""
-  for candidate in \
-    "${HOME}/.claude/skills/here-now/scripts/publish.sh" \
-    "${HOME}/.agents/skills/here-now/scripts/publish.sh" \
-    "${HOME}/.hermes/skills/here-now/scripts/publish.sh" \
-    "${HOME}/.cursor/skills/here-now/scripts/publish.sh" \
-    "./scripts/here-now-publish.sh"
-  do
-    if [[ -x "$candidate" ]]; then
-      PUBLISH_SH="$candidate"
-      break
-    fi
-  done
+PUBLISH_SH="${HERENOW_PUBLISH_SCRIPT:-$PWD/.ci-tools/herenow/here-now/scripts/publish.sh}"
+if [[ ! -x "$PUBLISH_SH" ]]; then
+  echo 'Check out heredotnow/skill at 8cf033ed53b82c0c67b16359c8c431f99e111d04 into .ci-tools/herenow first.' >&2
+  exit 1
 fi
-
-if [[ -z "$PUBLISH_SH" ]]; then
-  FOUND=$(find "${HOME}" -path '*here-now*/scripts/publish.sh' 2>/dev/null | head -1 || true)
-  if [[ -n "$FOUND" && -f "$FOUND" ]]; then
-    chmod +x "$FOUND" || true
-    PUBLISH_SH="$FOUND"
-  fi
+PUBLISH_ROOT="$(cd "$(dirname "$PUBLISH_SH")/../.." && pwd)"
+if [[ "$(git -C "$PUBLISH_ROOT" rev-parse HEAD)" != '8cf033ed53b82c0c67b16359c8c431f99e111d04' ]]; then
+  echo 'Publisher revision differs from the reviewed CI pin.' >&2
+  exit 1
 fi
-
-if [[ -z "$PUBLISH_SH" ]]; then
-  echo "Installing here-now skill…" >&2
-  npx --yes skills add heredotnow/skill --skill here-now -g
-  for candidate in \
-    "${HOME}/.claude/skills/here-now/scripts/publish.sh" \
-    "${HOME}/.agents/skills/here-now/scripts/publish.sh"
-  do
-    if [[ -x "$candidate" ]]; then PUBLISH_SH="$candidate"; break; fi
-  done
-fi
-
-if [[ -z "$PUBLISH_SH" || ! -x "$PUBLISH_SH" ]]; then
-  echo "error: here-now publish.sh not found after install" >&2
-  find "${HOME}" -path '*here-now*/publish.sh' 2>/dev/null | head -20 >&2 || true
+if [[ -n "$(git -C "$PUBLISH_ROOT" status --porcelain --untracked-files=no)" ]]; then
+  echo 'Publisher checkout contains local modifications.' >&2
   exit 1
 fi
 
