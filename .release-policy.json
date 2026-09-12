@@ -11,5 +11,6 @@
   "notes": [
     "Validation-only policy: no synthetic beta/RC artifacts or tag-triggered stable releases.",
     "Syntax baseline only: YAML/JSON/Python/shell/JavaScript where present. No application tests, browser playback, cluster rendering or deployment checks implied."
-  ]
+  ],
+  "visibility": "public"
 }
