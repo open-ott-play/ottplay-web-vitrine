@@ -3,7 +3,8 @@
   "mode": "validation-only",
   "default_branch": "main",
   "validation_workflows": [
-    "validate.yml"
+    "validate.yml",
+    "workflow-validation.yml"
   ],
   "local_checks": [
     "bash scripts/ci.sh"
@@ -12,5 +13,6 @@
     "Validation-only policy: no synthetic beta/RC artifacts or tag-triggered stable releases.",
     "Syntax baseline only: YAML/JSON/Python/shell/JavaScript where present. No application tests, browser playback, cluster rendering or deployment checks implied."
   ],
-  "visibility": "public"
+  "visibility": "public",
+  "single_entry_ci": true
 }
