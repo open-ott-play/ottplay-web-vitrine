@@ -14,5 +14,10 @@
     "Syntax baseline only: YAML/JSON/Python/shell/JavaScript where present. No application tests, browser playback, cluster rendering or deployment checks implied."
   ],
   "visibility": "public",
-  "single_entry_ci": true
+  "single_entry_ci": true,
+  "change_scope": {
+    "documentation_paths": [],
+    "required_paths": [],
+    "always_validate_workflows": []
+  }
 }
