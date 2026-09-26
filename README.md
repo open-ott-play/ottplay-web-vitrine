@@ -1,6 +1,6 @@
 # ottplay-web-vitrine
 
-Public **static** OttPlay FOSS web player — a thin vitrine that publishes the player UI to [here.now](https://here.now), same role as [`inverter-web-vitrine`](https://github.com/victron-venus/inverter-web-vitrine) for Victron status.
+Public **static** OttPlay FOSS web player hosted on [here.now](https://here.now).
 
 **Live demo:** https://player.ottplay.here.now/
 
@@ -78,7 +78,6 @@ Do not commit `~/.herenow/credentials`, `.herenow/state.json`, or real `proxy.js
 
 - Player source / releases: https://github.com/open-ott-play/ottplay-foss
 - Privacy policy: https://github.com/open-ott-play/ottplay-foss/blob/main/docs/privacy-policy.md
-- Pattern sibling: https://github.com/victron-venus/inverter-web-vitrine
 - here.now docs: https://here.now/docs
 
 ## License

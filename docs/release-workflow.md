@@ -1,64 +1,46 @@
-# CI and release operations — open-ott-play/ottplay-web-vitrine
+# CI and deployment
 
-The source of truth is `.release-policy.json`. `quality-gate.yml` runs the callable
-validation workflows and produces the required **CI gate** status on every PR
-and merge-queue commit. Superseded PR runs are cancelled. A lightweight Change scope
-job checks the complete Git diff first. Documentation-only changes skip build and
-test workflows; the gate accepts only these explicitly justified skips. Missing,
-failed or unexpectedly skipped workflows fail the gate. Unknown files, incomplete
-history, code, workflow and lockfile changes run full validation.
-
-The optional `change_scope` policy provides exact `documentation_paths`, exact
-`required_paths` for documentation used as a build input, and
-`always_validate_workflows` for independently required checks. Documentation paths
-cannot exempt source, tests, fixtures, build configuration or dependencies.
-Manual dispatch, scheduled runs and release qualification remain full. A push
-containing only documentation stops before release preparation, version allocation,
-artifact builds or publication. This does not change the configured nightly policy.
+The validation policy is defined in `.release-policy.json`. Documentation-only
+changes skip application checks. Source, configuration and workflow changes run
+`.github/workflows/validate.yml` and
+`.github/workflows/workflow-validation.yml`; missing or failed required checks
+fail `CI gate`. Manual and scheduled validation run the full configured checks.
 
 ## Local checks
 
-Use Python 3.11+ for the CLI and the project toolchains documented in `scripts/ci.sh`.
-The scripts fail on missing dependencies and do not publish anything during checks.
+Use Python 3.11+, actionlint 1.7.12 and Node.js for JavaScript validation:
 
-```bash
-python3 scripts/release.py check
+```sh
+python3 -m pip install PyYAML==6.0.3
+bash scripts/ci.sh
 python3 scripts/release.py status
 ```
 
-Callable validation workflows:
-- `.github/workflows/validate.yml`
-- `.github/workflows/workflow-validation.yml`
+Request or inspect hosted validation:
 
-## Nightly validation and deployment
+```sh
+gh workflow run quality-gate.yml
+gh run list --workflow quality-gate.yml
+```
 
-This repository uses validation-only policy: PR/merge queue checks and staggered
-nightly validation. It does not publish synthetic application beta/RC releases.
-Infrastructure deployments remain manual and use the checks and explicit source
-approval declared by their deployment workflow. Terraform validation uses backend-disabled
-copies; a green syntax/validate job is not a reviewed plan or a deployment.
+These checks cover the repository's syntax and workflow contracts. Browser
+playback and production deployment are separate checks.
 
-## Project limits and rollout requirements
+## Publishing the player
 
-- Validation-only policy: no synthetic beta/RC artifacts or tag-triggered stable releases.
-- Syntax baseline only: YAML/JSON/Python/shell/JavaScript where present. No application tests, browser playback, cluster rendering or deployment checks implied.
+This repository publishes an existing stable OttPlay FOSS web bundle; it does not
+build application beta or RC packages. Run `publish-herenow.yml` manually from the
+default branch with an exact stable `vX.Y.Z` player tag and approve the protected
+`production` environment. The workflow checks release metadata, the source run,
+Release gate and distribution SHA-256 before extraction. Configure the production
+publishing credentials described in the [README](../README.md#secrets--never-commit).
 
-For public repositories, merge and verify the workflows before enabling the
-additive Terraform **CI gate** ruleset. Where release/deployment workflows use
-environments, configure reviewers and default-branch-only policies. The governance
-repositories contain `release-standards.tf` and opt-in examples for public
-repositories only. Do not extend these requirements to private repositories by
-buying a plan or to workflows that have not landed.
+Release events and `repository_dispatch` do not publish the site. In a fresh
+checkout, `python3 scripts/prepare-dist.py vX.Y.Z` verifies and stages the selected
+bundle in `dist/` without publishing.
 
-Existing review/security rules remain in force. Physical hardware, real
-credentials/streams and production access are not implied by unit tests or builds.
-
-The release engine/client are vendored from `victron-venus/venus-os-ci-toolkit`.
-They are excluded from consumer-specific formatting/type policy. Application
-release workflows run the mandatory Release tooling contracts job; validation-only
-projects receive the local client, whose contracts run in the toolkit. Update the toolkit source and rerun
-`scripts/install_release.py`; `--check` detects drift.
-
-References: [GitHub schedules](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule),
-[protected environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments),
-[artifact provenance](https://docs.github.com/en/rest/actions/artifacts).
+The publisher is pinned to
+`heredotnow/skill@8cf033ed53b82c0c67b16359c8c431f99e111d04`. For local publishing,
+clone that repository into `.ci-tools/herenow`, check out this exact commit and
+use `scripts/publish-herenow.sh`. The wrapper rejects a different or modified
+publisher revision.
