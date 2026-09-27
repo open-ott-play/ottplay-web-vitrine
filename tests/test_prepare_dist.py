@@ -20,7 +20,11 @@ class PrepareDistributionTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         (self.root / "scripts").mkdir()
         self.script = self.root / "scripts/prepare-dist.py"
-        shutil.copyfile(Path(__file__).parents[1] / "scripts/prepare-dist.py", self.script)
+        source = Path(__file__).parents[1]
+        for name in ("prepare-dist.py", "demo_media.py"):
+            shutil.copyfile(source / "scripts" / name, self.root / "scripts" / name)
+        shutil.copytree(source / "static", self.root / "static")
+        shutil.copyfile(source / "demo-media.json", self.root / "demo-media.json")
         self.sha = "a" * 40
         self.tag = "v1.2.3"
         self.prerelease = False
@@ -29,7 +33,7 @@ class PrepareDistributionTests(unittest.TestCase):
         self.archive = self.tar()
         self.checksum = None
 
-    def tar(self, name="dist/index.html", symlink=False):
+    def tar(self, name="dist/index.html", symlink=False, demo=False):
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w:gz") as archive:
             entry = tarfile.TarInfo(name)
@@ -41,6 +45,9 @@ class PrepareDistributionTests(unittest.TestCase):
                 data = b"<!doctype html><title>verified</title>"
                 entry.size = len(data)
                 archive.addfile(entry, io.BytesIO(data))
+            if demo:
+                entry = tarfile.TarInfo("dist/demo/pattern.mp4")
+                archive.addfile(entry, io.BytesIO())
         return stream.getvalue()
 
     def api(self, command):
@@ -71,13 +78,31 @@ class PrepareDistributionTests(unittest.TestCase):
 
     def execute(self):
         with patch.object(sys, "argv", [str(self.script), self.tag]), \
+             patch.object(sys, "path", [str(self.script.parent), *sys.path]), \
              patch("subprocess.check_output", side_effect=self.api), \
              patch("subprocess.run", side_effect=self.download):
             runpy.run_path(str(self.script), run_name="__main__")
 
     def test_verified_stable_bytes_are_prepared_without_publishing(self):
         self.execute()
-        self.assertTrue((self.root / "dist/index.html").is_file())
+        self.assertEqual((self.root / "dist/index.html").read_bytes(), b"<!doctype html><title>verified</title>")
+        source = self.root / "static/demo"
+        staged = self.root / "dist/demo"
+        self.assertEqual({path.name for path in staged.iterdir()}, {path.name for path in source.iterdir()})
+        for path in source.iterdir():
+            self.assertEqual((staged / path.name).read_bytes(), path.read_bytes())
+
+    def test_missing_demo_segment_does_not_stage_a_publishable_distribution(self):
+        (self.root / "static/demo/pattern0.ts").unlink()
+        with self.assertRaisesRegex(SystemExit, "Demo file inventory"):
+            self.execute()
+        self.assertFalse((self.root / "dist").exists())
+
+    def test_upstream_demo_collision_does_not_silently_replace_verified_bytes(self):
+        self.archive = self.tar(demo=True)
+        with self.assertRaisesRegex(SystemExit, "conflicts"):
+            self.execute()
+        self.assertFalse((self.root / "dist").exists())
 
     def test_nonstable_or_injected_tag_fails_before_download(self):
         for tag in ("v1.2.3-rc.1", "latest", "v1.2.3;id", "v01.2.3"):
