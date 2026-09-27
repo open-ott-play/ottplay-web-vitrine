@@ -70,9 +70,9 @@ def verify_swop_runtime(directory):
     substitute for the release's runtime tests or checksum/provenance checks.
     """
     root = Path(directory)
-    runtime = root / "player.js"
-    if root.is_symlink() or runtime.is_symlink() or not runtime.is_file():
-        raise SystemExit("SWOP relay requires a compatible player.js release bundle")
+    runtime = root / "dist/player.js"
+    if root.is_symlink() or runtime.parent.is_symlink() or runtime.is_symlink() or not runtime.is_file():
+        raise SystemExit("SWOP relay requires a compatible dist/player.js release bundle")
     script = runtime.read_bytes()
     if not re.search(rb"\bsessionToken\b", script) or b"Allowlist this Device ID" in script:
         raise SystemExit("SWOP relay requires a player release with sessionToken support; older Device ID allowlist builds cannot be published")
