@@ -1,5 +1,13 @@
 {
   "proxies": {
+    "/vportal/api": {
+      "upstream": "https://swop.2560801.xyz/vportal/api",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer ${OTTPLAY_SWOP_INSTALLATION_TOKEN}"
+      },
+      "rateLimit": "1200/hour/ip"
+    },
     "/swop/session": {
       "upstream": "https://swop.2560801.xyz/session",
       "method": "POST",
