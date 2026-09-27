@@ -22,6 +22,8 @@ fi
 # Refuse a destructive full-site replacement with an incomplete demo, including
 # when this wrapper is called directly instead of through prepare-dist.py.
 python3 "$(dirname "${BASH_SOURCE[0]}")/demo_media.py" "$DIST"
+python3 "$(dirname "${BASH_SOURCE[0]}")/msx.py" "$DIST"
+python3 "$(dirname "${BASH_SOURCE[0]}")/swop.py" "$DIST" --runtime
 
 if [[ -z "${HERENOW_API_KEY:-}" && ! -f "${HOME}/.herenow/credentials" ]]; then
   echo "error: set HERENOW_API_KEY or write ~/.herenow/credentials" >&2
