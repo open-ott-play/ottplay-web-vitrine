@@ -33,7 +33,7 @@ class PrepareDistributionTests(unittest.TestCase):
         self.archive = self.tar()
         self.checksum = None
 
-    def tar(self, name="dist/index.html", symlink=False, demo=False,
+    def tar(self, name="index.html", symlink=False, demo=False,
             runtime=b'function poll(session){return JSON.stringify({sessionToken:session.sessionToken});}'):
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w:gz") as archive:
@@ -51,7 +51,7 @@ class PrepareDistributionTests(unittest.TestCase):
                 entry.size = len(runtime)
                 archive.addfile(entry, io.BytesIO(runtime))
             if demo:
-                entry = tarfile.TarInfo("dist/demo/pattern.mp4")
+                entry = tarfile.TarInfo("demo/pattern.mp4")
                 archive.addfile(entry, io.BytesIO())
         return stream.getvalue()
 
@@ -91,6 +91,8 @@ class PrepareDistributionTests(unittest.TestCase):
     def test_verified_stable_bytes_are_prepared_without_publishing(self):
         self.execute()
         self.assertEqual((self.root / "dist/index.html").read_bytes(), b"<!doctype html><title>verified</title>")
+        self.assertIn(b"sessionToken", (self.root / "dist/dist/player.js").read_bytes())
+        self.assertFalse((self.root / "dist/player.js").exists())
         source = self.root / "static/demo"
         staged = self.root / "dist/demo"
         self.assertEqual({path.name for path in staged.iterdir()}, {path.name for path in source.iterdir()})
@@ -126,7 +128,7 @@ class PrepareDistributionTests(unittest.TestCase):
 
     def test_publish_wrapper_rejects_old_player_runtime_before_network_access(self):
         self.execute()
-        (self.root / "dist/player.js").write_text('alert("Allowlist this Device ID");')
+        (self.root / "dist/dist/player.js").write_text('alert("Allowlist this Device ID");')
         wrapper = Path(__file__).parents[1] / "scripts/publish-herenow.sh"
         result = subprocess.run(["bash", str(wrapper), str(self.root / "dist")], capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
@@ -147,7 +149,7 @@ class PrepareDistributionTests(unittest.TestCase):
 
     def test_upstream_swop_configuration_or_publication_controls_are_rejected(self):
         original = self.archive
-        for name in ("dist/local/swop.json", "dist/.herenow/proxy.json", "dist/.herenow/data.json"):
+        for name in ("local/swop.json", ".herenow/proxy.json", ".herenow/data.json"):
             result = io.BytesIO()
             with tarfile.open(fileobj=io.BytesIO(original), mode="r:gz") as source, \
                  tarfile.open(fileobj=result, mode="w:gz") as target:
@@ -178,7 +180,7 @@ class PrepareDistributionTests(unittest.TestCase):
         with tarfile.open(fileobj=stream, mode="r:gz") as source, tarfile.open(fileobj=result, mode="w:gz") as target:
             for member in source:
                 target.addfile(member, source.extractfile(member))
-            target.addfile(tarfile.TarInfo("dist/msx/start.json"), io.BytesIO())
+            target.addfile(tarfile.TarInfo("msx/start.json"), io.BytesIO())
         self.archive = result.getvalue()
         with self.assertRaisesRegex(SystemExit, "MSX directory"):
             self.execute()
@@ -223,7 +225,7 @@ class PrepareDistributionTests(unittest.TestCase):
             self.execute()
 
     def test_verified_but_unsafe_archive_does_not_extract(self):
-        for name, symlink in (("../escape", False), ("/absolute", False), ("dist/index.html", True)):
+        for name, symlink in (("../escape", False), ("/absolute", False), ("index.html", True)):
             self.archive = self.tar(name, symlink)
             with self.subTest(name=name), self.assertRaises(SystemExit):
                 self.execute()

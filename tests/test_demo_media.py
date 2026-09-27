@@ -22,7 +22,8 @@ class DemoMediaTests(unittest.TestCase):
         self.site = self.root / "site"
         shutil.copytree(ROOT / "static", self.site)
         (self.site / "index.html").write_text("<!doctype html><title>player</title>")
-        (self.site / "player.js").write_text('function poll(session){return JSON.stringify({sessionToken:session.sessionToken});}')
+        (self.site / "dist").mkdir()
+        (self.site / "dist/player.js").write_text('function poll(session){return JSON.stringify({sessionToken:session.sessionToken});}')
         self.demo = self.site / "demo"
         self.manifest = self.root / "demo-media.json"
         shutil.copyfile(ROOT / "demo-media.json", self.manifest)

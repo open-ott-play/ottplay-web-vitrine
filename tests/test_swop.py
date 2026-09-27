@@ -103,22 +103,41 @@ class SwopPublicationTests(unittest.TestCase):
             stage_swop(self.target, self.source)
         self.assertEqual(list(self.target.iterdir()), [])
 
-    def test_runtime_guard_rejects_missing_legacy_and_symlinked_bundles(self):
-        runtime = self.target / "player.js"
-        with self.assertRaisesRegex(SystemExit, "compatible player.js"):
+    def test_runtime_guard_checks_the_modea_runtime_not_a_root_level_decoy(self):
+        compatible = 'function poll(session){return JSON.stringify({sessionToken:session.sessionToken});}'
+        # The public package has index.html at its root and the runtime in dist/.
+        (self.target / "index.html").write_text("<!doctype html><title>Player</title>")
+        (self.target / "player.js").write_text(compatible)
+        with self.assertRaisesRegex(SystemExit, "compatible dist/player.js"):
             verify_swop_runtime(self.target)
+        runtime = self.target / "dist/player.js"
+        runtime.parent.mkdir()
         for script in ('var otherToken="";', 'var nosessionToken="";',
                        'var sessionToken=""; alert("Allowlist this Device ID");'):
             runtime.write_text(script)
             with self.subTest(script=script), self.assertRaisesRegex(SystemExit, "sessionToken support"):
                 verify_swop_runtime(self.target)
-        runtime.write_text('function poll(session){return JSON.stringify({sessionToken:session.sessionToken});}')
+        runtime.write_text(compatible)
+        (self.target / "player.js").unlink()
         verify_swop_runtime(self.target)
-        original = self.target / "original.js"
-        runtime.rename(original)
-        runtime.symlink_to(original)
-        with self.assertRaisesRegex(SystemExit, "compatible player.js"):
-            verify_swop_runtime(self.target)
+
+    def test_runtime_guard_rejects_runtime_file_and_directory_symlinks(self):
+        runtime = self.target / "dist/player.js"
+        runtime.parent.mkdir()
+        runtime.write_text('var sessionToken="";')
+        for relative in ("dist/player.js", "dist"):
+            path = self.target / relative
+            original = path.with_name(path.name + ".original")
+            path.rename(original)
+            path.symlink_to(original)
+            with self.subTest(path=relative), self.assertRaisesRegex(SystemExit, "compatible dist/player.js"):
+                verify_swop_runtime(self.target)
+            path.unlink()
+            original.rename(path)
+        linked_root = self.root / "linked-root"
+        linked_root.symlink_to(self.target, target_is_directory=True)
+        with self.assertRaisesRegex(SystemExit, "compatible dist/player.js"):
+            verify_swop_runtime(linked_root)
 
 
 if __name__ == "__main__":
