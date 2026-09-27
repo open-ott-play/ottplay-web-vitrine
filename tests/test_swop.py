@@ -65,6 +65,27 @@ class SwopPublicationTests(unittest.TestCase):
             with self.subTest(fields=list(value)), self.assertRaisesRegex(SystemExit, "SWOP public configuration"):
                 verify_swop(self.source)
 
+    def test_vportal_route_is_required_and_cannot_become_an_open_proxy(self):
+        path = self.source / ".herenow/proxy.json"
+        original = json.loads(path.read_text())
+        invalid = []
+        missing = copy.deepcopy(original)
+        del missing["proxies"]["/vportal/api"]
+        invalid.append(missing)
+        wildcard = copy.deepcopy(original)
+        wildcard["proxies"]["/vportal/*"] = wildcard["proxies"].pop("/vportal/api")
+        invalid.append(wildcard)
+        for field, value in (("upstream", "https://arbitrary.example/api"),
+                             ("method", "GET"), ("headers", {}),
+                             ("rateLimit", "999999/hour/ip")):
+            mutated = copy.deepcopy(original)
+            mutated["proxies"]["/vportal/api"][field] = value
+            invalid.append(mutated)
+        for index, value in enumerate(invalid):
+            path.write_text(json.dumps(value))
+            with self.subTest(index=index), self.assertRaisesRegex(SystemExit, "SWOP proxy manifest"):
+                verify_swop(self.source)
+
     def test_rejects_duplicate_json_keys(self):
         (self.source / "local/swop.json").write_text('{"swopBaseUrl":"https://wrong.example","swopBaseUrl":"/swop"}')
         with self.assertRaisesRegex(SystemExit, "duplicate keys"):

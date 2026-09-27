@@ -1,4 +1,4 @@
-"""Stage the same-origin SWOP relay without publishing installation credentials."""
+"""Stage the same-origin installation relays without publishing credentials."""
 import json
 from pathlib import Path
 import re
@@ -11,6 +11,12 @@ PROXY_PATH = Path(".herenow/proxy.json")
 EXPECTED_CONFIG = {"swopBaseUrl": "/swop"}
 EXPECTED_PROXY = {
     "proxies": {
+        "/vportal/api": {
+            "upstream": "https://swop.2560801.xyz/vportal/api",
+            "method": "POST",
+            "headers": {"Authorization": "Bearer ${OTTPLAY_SWOP_INSTALLATION_TOKEN}"},
+            "rateLimit": "1200/hour/ip",
+        },
         "/swop/session": {
             "upstream": "https://swop.2560801.xyz/session",
             "method": "POST",

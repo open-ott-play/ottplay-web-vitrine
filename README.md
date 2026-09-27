@@ -69,8 +69,9 @@ The host must serve both JSON files as `application/json` with CORS enabled.
 The publication also includes `static/local/swop.json`, which selects the
 same-origin `/swop` text-entry relay. Every browser/TV using this installation
 can use the keyboard's **♥™** action without a Device ID allowlist. The
-repository-owned `static/.herenow/proxy.json` maps only `POST /swop/session` and
-`POST /swop/val` to the SWOP service. here.now injects the installation credential
+repository-owned `static/.herenow/proxy.json` maps `POST /swop/session`,
+`POST /swop/val` and `POST /vportal/api` to the installation service.
+here.now injects the installation credential
 from a workspace service variable on the server; it is never included in the
 player's public configuration or JavaScript. Preparation and the publishing
 wrapper verify both files and reject embedded credentials or changed routes.
@@ -80,6 +81,14 @@ Set the workspace variable `OTTPLAY_SWOP_INSTALLATION_TOKEN` with
 in SWOP before deploying. The manifest contains only the variable reference and
 must be included in every publication; here.now drops proxy routes when a new
 version omits it. See the [SWOP deployment checks](docs/release-workflow.md#swop-relay).
+
+VPortal uses the same `/vportal/api` JSON contract as the local OTT server.
+The relay accepts only exact upstream endpoints configured by the operator in
+the Worker's `VPORTAL_ENDPOINTS_JSON` allowlist. Configure that list before
+publishing; a static player bundle alone cannot load a browser VPortal catalog.
+Portal subscription keys remain in the user's player settings and request body;
+they must never be copied into this repository or the proxy manifest. The relay
+does not proxy video streams or transcode media.
 
 ### Publish a reviewed stable release
 

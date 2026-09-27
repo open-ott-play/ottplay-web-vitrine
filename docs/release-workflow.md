@@ -64,8 +64,9 @@ This compatibility guard complements the release and live runtime checks; it
 does not replace them.
 
 Preparation also stages `static/local/swop.json` and
-`static/.herenow/proxy.json`. The client selects `/swop`; only the exact POST
-session-creation and value-polling routes are forwarded to `swop.2560801.xyz`.
+`static/.herenow/proxy.json`. The client selects `/swop`; the exact POST
+session-creation, value-polling and `/vportal/api` routes are forwarded to
+`swop.2560801.xyz`.
 The publishing wrapper checks both files before calling here.now, including
 their methods, upstreams, rate limits and server-side variable reference.
 An upstream archive containing its own `local/swop.json` or `.herenow/`
@@ -108,3 +109,26 @@ that a non-browser caller is running the original player: another server can
 relay requests through the public installation. Short-lived session
 capabilities and rate limits bound that exposure; absolute prevention requires
 additional trusted identity.
+
+## VPortal relay
+
+The static site needs `POST /vportal/api` in addition to the player bundle.
+Its body is `{ "url": "...", "params": { "app": "ott-play", "key": "..." } }`,
+matching the local OTT server. The route uses the same server-side installation
+credential and browser-origin boundary as SWOP; a legacy Device ID allowlist
+does not authorize VPortal requests.
+
+Deploy the installation service with its VPortal handler, then configure
+`vportal_endpoints` in its Terraform workspace. This becomes the
+`VPORTAL_ENDPOINTS_JSON` binding: a list of exact operator-approved API URLs.
+Keep subscription keys out of this list. An empty list disables the relay;
+an unknown destination is rejected. Redirects are refused to prevent forwarding
+the user's key to another destination. The endpoint is rate-limited to
+1200 requests/hour/IP at here.now and bounded again at the service.
+
+The publishing validator requires this exact route, method, upstream, rate
+limit and secret reference. After publication, test a configured portal's root
+and a category through the site, plus rejection of an unapproved destination
+and a foreign browser origin. API errors must not echo request keys or upstream
+bodies. Video playback still depends on the TV's supported formats and reachable
+media URLs; the relay carries catalog JSON, not media bytes.
