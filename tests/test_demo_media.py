@@ -22,6 +22,7 @@ class DemoMediaTests(unittest.TestCase):
         self.site = self.root / "site"
         shutil.copytree(ROOT / "static", self.site)
         (self.site / "index.html").write_text("<!doctype html><title>player</title>")
+        (self.site / "player.js").write_text('function poll(session){return JSON.stringify({sessionToken:session.sessionToken});}')
         self.demo = self.site / "demo"
         self.manifest = self.root / "demo-media.json"
         shutil.copyfile(ROOT / "demo-media.json", self.manifest)
@@ -123,6 +124,8 @@ class DemoMediaTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), [
             "Verified complete MP4/HLS demo media.",
+            "MSX bootstrap verified",
+            "SWOP endpoint configuration verified",
             "application/vnd.apple.mpegurl", "video/mp2t", "text/html",
         ])
 

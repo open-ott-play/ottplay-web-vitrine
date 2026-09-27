@@ -39,7 +39,7 @@ approved ottplay-foss stable release  →  verify and unpack ottplay-foss-dist.t
 
 - **No** `ottplay-server` / HLS proxy / command-queue on here.now.
 - Playlists and EPG must be **public HTTPS** endpoints the browser can reach (CORS permitting).
-- Same-origin companion APIs from Mode A are not available on this URL.
+- The SWOP text-entry relay is available on the same origin; other Mode A companion APIs are not hosted on this URL.
 
 ## Shared demo media
 
@@ -56,7 +56,36 @@ and update instructions.
 
 ## How to update the live site
 
+Every prepared publication also includes the repository-owned `static/msx/`
+bootstrap. In Media Station X, choose **Settings → Start Parameter → Setup**,
+enter `player.ottplay.here.now`, enable the HTTPS lock and confirm **OTT-play
+FOSS**. MSX reads `/msx/start.json`, then `/msx/content.json`, and opens the player.
+The displayed bootstrap version is separate from the player release version.
+If startup is interrupted with the MSX menu button, an **Open OTT-play FOSS**
+tile remains available. The publishing wrapper rejects missing or modified
+bootstrap files before uploading, just as it checks the shared demo media.
+The host must serve both JSON files as `application/json` with CORS enabled.
+
+The publication also includes `static/local/swop.json`, which selects the
+same-origin `/swop` text-entry relay. Every browser/TV using this installation
+can use the keyboard's **♥™** action without a Device ID allowlist. The
+repository-owned `static/.herenow/proxy.json` maps only `POST /swop/session` and
+`POST /swop/val` to the SWOP service. here.now injects the installation credential
+from a workspace service variable on the server; it is never included in the
+player's public configuration or JavaScript. Preparation and the publishing
+wrapper verify both files and reject embedded credentials or changed routes.
+
+Set the workspace variable `OTTPLAY_SWOP_INSTALLATION_TOKEN` with
+`allowedUpstreams: ["swop.2560801.xyz"]` and register the matching installation
+in SWOP before deploying. The manifest contains only the variable reference and
+must be included in every publication; here.now drops proxy routes when a new
+version omits it. See the [SWOP deployment checks](docs/release-workflow.md#swop-relay).
+
 ### Publish a reviewed stable release
+
+Select a release with the SWOP installation/session-token protocol. The
+preparation and publication checks reject older Device ID allowlist bundles
+before they can replace the live player.
 
 1. Configure `HERENOW_API_KEY` in the protected production environment with access to the `ottplay` workspace. Review the workspace and site slug configured in the workflow.
 2. Run **Actions → Publish here.now → Run workflow** from the default branch with an exact stable `vX.Y.Z` tag from `open-ott-play/ottplay-foss`.
@@ -86,7 +115,9 @@ Keep the **`player`** workspace label pointed at that Site (here.now dashboard /
 | `HERENOW_SITE_SLUG` | Existing Site slug to `PUT` (update) instead of creating a new Site |
 | `HERENOW_WORKSPACE` | Defaults to `ottplay` |
 
-Do not commit `~/.herenow/credentials`, `.herenow/state.json`, or real `proxy.json`.
+Do not commit `~/.herenow/credentials`, `.herenow/state.json`, or actual SWOP
+installation credentials. `static/.herenow/proxy.json` is a checked-in manifest
+containing a service-variable reference, never its value.
 
 ## Related
 

@@ -1,0 +1,17 @@
+{
+  "headline": "OTT-play FOSS",
+  "action": "link:https://player.ottplay.here.now/",
+  "pages": [
+    {
+      "items": [
+        {
+          "type": "default",
+          "layout": "0,0,12,2",
+          "icon": "play-circle-outline",
+          "label": "Open OTT-play FOSS",
+          "action": "link:https://player.ottplay.here.now/"
+        }
+      ]
+    }
+  ]
+}

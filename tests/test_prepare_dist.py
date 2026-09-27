@@ -21,7 +21,7 @@ class PrepareDistributionTests(unittest.TestCase):
         (self.root / "scripts").mkdir()
         self.script = self.root / "scripts/prepare-dist.py"
         source = Path(__file__).parents[1]
-        for name in ("prepare-dist.py", "demo_media.py"):
+        for name in ("prepare-dist.py", "demo_media.py", "msx.py", "swop.py"):
             shutil.copyfile(source / "scripts" / name, self.root / "scripts" / name)
         shutil.copytree(source / "static", self.root / "static")
         shutil.copyfile(source / "demo-media.json", self.root / "demo-media.json")
@@ -33,7 +33,8 @@ class PrepareDistributionTests(unittest.TestCase):
         self.archive = self.tar()
         self.checksum = None
 
-    def tar(self, name="dist/index.html", symlink=False, demo=False):
+    def tar(self, name="dist/index.html", symlink=False, demo=False,
+            runtime=b'function poll(session){return JSON.stringify({sessionToken:session.sessionToken});}'):
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w:gz") as archive:
             entry = tarfile.TarInfo(name)
@@ -45,6 +46,10 @@ class PrepareDistributionTests(unittest.TestCase):
                 data = b"<!doctype html><title>verified</title>"
                 entry.size = len(data)
                 archive.addfile(entry, io.BytesIO(data))
+            if runtime is not None:
+                entry = tarfile.TarInfo("dist/player.js")
+                entry.size = len(runtime)
+                archive.addfile(entry, io.BytesIO(runtime))
             if demo:
                 entry = tarfile.TarInfo("dist/demo/pattern.mp4")
                 archive.addfile(entry, io.BytesIO())
@@ -91,6 +96,93 @@ class PrepareDistributionTests(unittest.TestCase):
         self.assertEqual({path.name for path in staged.iterdir()}, {path.name for path in source.iterdir()})
         for path in source.iterdir():
             self.assertEqual((staged / path.name).read_bytes(), path.read_bytes())
+        start = json.loads((self.root / "dist/msx/start.json").read_text())
+        parameter = start["parameter"].replace("{PREFIX}", "https://").replace("{SERVER}", "player.ottplay.here.now")
+        self.assertEqual(parameter, "content:https://player.ottplay.here.now/msx/content.json")
+        content = json.loads((self.root / "dist/msx/content.json").read_text())
+        self.assertEqual(content["action"], "link:https://player.ottplay.here.now/")
+        self.assertEqual(content["pages"][0]["items"][0]["action"], content["action"])
+        swop = json.loads((self.root / "dist/local/swop.json").read_text())
+        self.assertEqual(swop, {"swopBaseUrl": "/swop"})
+        self.assertEqual((self.root / "dist/.herenow/proxy.json").read_bytes(),
+                         (self.root / "static/.herenow/proxy.json").read_bytes())
+
+    def test_publish_wrapper_rejects_a_shared_swop_device_identity(self):
+        self.execute()
+        config = self.root / "dist/local/swop.json"
+        config.write_text(json.dumps({"swopBaseUrl": "/swop", "clientId": "dev_shared_identity"}))
+        wrapper = Path(__file__).parents[1] / "scripts/publish-herenow.sh"
+        result = subprocess.run(["bash", str(wrapper), str(self.root / "dist")], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SWOP public configuration", result.stderr)
+
+    def test_old_or_missing_player_protocol_is_rejected_before_staging(self):
+        for runtime in (None, b'function oldPoll(){return "/val?c=123456";}',
+                        b'var sessionToken=""; alert("Allowlist this Device ID");'):
+            self.archive = self.tar(runtime=runtime)
+            with self.subTest(runtime=runtime), self.assertRaisesRegex(SystemExit, "SWOP relay requires"):
+                self.execute()
+            self.assertFalse((self.root / "dist").exists())
+
+    def test_publish_wrapper_rejects_old_player_runtime_before_network_access(self):
+        self.execute()
+        (self.root / "dist/player.js").write_text('alert("Allowlist this Device ID");')
+        wrapper = Path(__file__).parents[1] / "scripts/publish-herenow.sh"
+        result = subprocess.run(["bash", str(wrapper), str(self.root / "dist")], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SWOP relay requires", result.stderr)
+
+    def test_publish_wrapper_refuses_missing_or_modified_swop_proxy_before_network_access(self):
+        self.execute()
+        wrapper = Path(__file__).parents[1] / "scripts/publish-herenow.sh"
+        manifest = self.root / "dist/.herenow/proxy.json"
+        for replacement in (None, b'{"proxies":{"/swop/*":{"upstream":"https://wrong.example/"}}}'):
+            if replacement is None:
+                manifest.unlink()
+            else:
+                manifest.write_bytes(replacement)
+            result = subprocess.run(["bash", str(wrapper), str(self.root / "dist")], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("SWOP proxy manifest", result.stderr)
+
+    def test_upstream_swop_configuration_or_publication_controls_are_rejected(self):
+        original = self.archive
+        for name in ("dist/local/swop.json", "dist/.herenow/proxy.json", "dist/.herenow/data.json"):
+            result = io.BytesIO()
+            with tarfile.open(fileobj=io.BytesIO(original), mode="r:gz") as source, \
+                 tarfile.open(fileobj=result, mode="w:gz") as target:
+                for member in source:
+                    target.addfile(member, source.extractfile(member))
+                target.addfile(tarfile.TarInfo(name), io.BytesIO())
+            self.archive = result.getvalue()
+            with self.subTest(name=name), self.assertRaisesRegex(SystemExit, "SWOP configuration"):
+                self.execute()
+            self.assertFalse((self.root / "dist").exists())
+
+    def test_publish_wrapper_refuses_missing_or_modified_msx_before_network_access(self):
+        self.execute()
+        wrapper = Path(__file__).parents[1] / "scripts/publish-herenow.sh"
+        content = self.root / "dist/msx/content.json"
+        for replacement in (None, b'{"action":"link:https://wrong.example/"}'):
+            if replacement is None:
+                content.unlink()
+            else:
+                content.write_bytes(replacement)
+            result = subprocess.run(["bash", str(wrapper), str(self.root / "dist")], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("MSX bootstrap", result.stderr)
+
+    def test_upstream_msx_collision_does_not_silently_replace_verified_bytes(self):
+        stream = io.BytesIO(self.archive)
+        result = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode="r:gz") as source, tarfile.open(fileobj=result, mode="w:gz") as target:
+            for member in source:
+                target.addfile(member, source.extractfile(member))
+            target.addfile(tarfile.TarInfo("dist/msx/start.json"), io.BytesIO())
+        self.archive = result.getvalue()
+        with self.assertRaisesRegex(SystemExit, "MSX directory"):
+            self.execute()
+        self.assertFalse((self.root / "dist").exists())
 
     def test_missing_demo_segment_does_not_stage_a_publishable_distribution(self):
         (self.root / "static/demo/pattern0.ts").unlink()

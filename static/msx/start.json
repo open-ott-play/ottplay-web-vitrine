@@ -1,0 +1,5 @@
+{
+  "name": "OTT-play FOSS",
+  "version": "1.0.0",
+  "parameter": "content:{PREFIX}{SERVER}/msx/content.json"
+}

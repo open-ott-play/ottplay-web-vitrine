@@ -1,0 +1,20 @@
+{
+  "proxies": {
+    "/swop/session": {
+      "upstream": "https://swop.2560801.xyz/session",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer ${OTTPLAY_SWOP_INSTALLATION_TOKEN}"
+      },
+      "rateLimit": "60/hour/ip"
+    },
+    "/swop/val": {
+      "upstream": "https://swop.2560801.xyz/val",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer ${OTTPLAY_SWOP_INSTALLATION_TOKEN}"
+      },
+      "rateLimit": "7200/hour/ip"
+    }
+  }
+}
