@@ -19,6 +19,10 @@ if [[ ! -f "$DIST/index.html" ]]; then
   exit 1
 fi
 
+# Refuse a destructive full-site replacement with an incomplete demo, including
+# when this wrapper is called directly instead of through prepare-dist.py.
+python3 "$(dirname "${BASH_SOURCE[0]}")/demo_media.py" "$DIST"
+
 if [[ -z "${HERENOW_API_KEY:-}" && ! -f "${HOME}/.herenow/credentials" ]]; then
   echo "error: set HERENOW_API_KEY or write ~/.herenow/credentials" >&2
   exit 1
@@ -55,6 +59,20 @@ fi
 if [[ "$SPA" == "1" || "$SPA" == "true" ]]; then
   ARGS+=( --spa )
 fi
+
+# The pinned publisher has no HLS extension mapping and falls back to file(1),
+# which can report text/plain or application/octet-stream. Supply the existing
+# demo MIME types to that fallback without modifying the reviewed dependency.
+file() {
+  if [[ "$#" == 3 && "$1" == "--brief" && "$2" == "--mime-type" ]]; then
+    case "$3" in
+      */demo/pattern.m3u8) printf '%s\n' 'application/vnd.apple.mpegurl'; return ;;
+      */demo/pattern[0-9]*.ts) printf '%s\n' 'video/mp2t'; return ;;
+    esac
+  fi
+  command file "$@"
+}
+export -f file
 
 echo "Publishing $DIST → workspace=$WORKSPACE slug=${SLUG:-'(create/new)'} via $PUBLISH_SH …" >&2
 "$PUBLISH_SH" "${ARGS[@]}"

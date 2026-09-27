@@ -35,6 +35,14 @@ default branch with an exact stable `vX.Y.Z` player tag and approve the protecte
 Release gate and distribution SHA-256 before extraction. Configure the production
 publishing credentials described in the [README](../README.md#secrets--never-commit).
 
+Preparation also verifies the repository-owned `static/demo/` against
+`demo-media.json` and adds the MP4, HLS playlist and all HLS segments to `dist/demo/`.
+The upstream player archive intentionally omits these shared media files.
+Because a here.now update replaces the complete site, the publishing wrapper
+rechecks the staged demo and refuses missing or changed files before publishing.
+An upstream archive containing `/demo/` fails preparation and requires an
+explicit reconciliation. See [demo media maintenance](demo-media.md).
+
 Release events and `repository_dispatch` do not publish the site. In a fresh
 checkout, `python3 scripts/prepare-dist.py vX.Y.Z` verifies and stages the selected
 bundle in `dist/` without publishing.

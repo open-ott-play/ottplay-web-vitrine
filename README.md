@@ -30,6 +30,7 @@ Yes — publish the static frontend to a stable here.now workspace URL and expli
 
 ```text
 approved ottplay-foss stable release  →  verify and unpack ottplay-foss-dist.tar.gz
+                           →  add checksum-pinned static/demo/ media
                            →  here.now publish (workspace ottplay)
                            →  https://player.ottplay.here.now/
 ```
@@ -39,6 +40,19 @@ approved ottplay-foss stable release  →  verify and unpack ottplay-foss-dist.t
 - **No** `ottplay-server` / HLS proxy / command-queue on here.now.
 - Playlists and EPG must be **public HTTPS** endpoints the browser can reach (CORS permitting).
 - Same-origin companion APIs from Mode A are not available on this URL.
+
+## Shared demo media
+
+`static/demo/` owns the synthetic MP4, HLS playlist and all 12 HLS segments used
+by **Try demo** across the web and native players. These files are intentionally
+absent from upstream application bundles. Every prepared distribution includes
+them under `/demo/`, preserving the existing URLs when here.now replaces the
+whole site during a stable deployment.
+
+`demo-media.json` pins their sizes and SHA-256 hashes. Preparation, local CI and
+the publishing wrapper verify the complete demo; missing or changed files stop
+the deployment. See [demo media maintenance](docs/demo-media.md) for provenance
+and update instructions.
 
 ## How to update the live site
 

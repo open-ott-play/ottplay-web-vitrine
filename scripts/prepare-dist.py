@@ -9,6 +9,8 @@ import sys
 import tarfile
 import tempfile
 
+from demo_media import verify_demo
+
 REPO = "open-ott-play/ottplay-foss"
 tag = sys.argv[1] if len(sys.argv) == 2 else ""
 if not re.fullmatch(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", tag):
@@ -69,6 +71,11 @@ with tempfile.TemporaryDirectory(prefix="vitrine-release-") as temporary:
     selected = next((item for item in candidates if (item / "index.html").is_file()), None)
     require(selected is not None, "Verified archive does not contain index.html")
     require(api(f"git/ref/tags/{tag}") == ref, "Stable source tag changed during verification")
+    # here.now replaces the whole site; demo media is deliberately absent from
+    # upstream application bundles and must be supplied by this repository.
+    verify_demo(root / "static/demo", root / "demo-media.json")
+    require(not (selected / "demo").exists(), "Player archive conflicts with the repository-owned demo directory")
     import shutil
+    shutil.copytree(root / "static/demo", selected / "demo")
     shutil.copytree(selected, root / "dist")
 print(f"Prepared verified {tag}; publication requires the protected production job.")

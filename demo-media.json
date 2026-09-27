@@ -1,0 +1,62 @@
+{
+  "source": "https://liminal-sketch-vv8r.here.now/demo/",
+  "source_version": "01M3HNX5G9XVEF3947K5S1FZGK",
+  "files": {
+    "pattern.m3u8": {
+      "size": 475,
+      "sha256": "7ab79f27e38aea394ea7da8c47424053fd6fcec20ea855b34c68d7a21d93c159"
+    },
+    "pattern.mp4": {
+      "size": 1737564,
+      "sha256": "855673eb4ef999eae95658d937c1d3fc53b64053869d2101cb6904c717fc765f"
+    },
+    "pattern0.ts": {
+      "size": 142316,
+      "sha256": "1b9e35c2a644b19577a85eb3fd9493aff4418ba08d1da420994ca9ec7af6f15f"
+    },
+    "pattern1.ts": {
+      "size": 165064,
+      "sha256": "4d6e9da2d65c596189d1bf5eec12a47dc3f38b6a5040330dd9ac1348f188349a"
+    },
+    "pattern10.ts": {
+      "size": 143068,
+      "sha256": "8ab15f114a109face6aa6404b827817d97884a45876a7393af6faea5824e7b0c"
+    },
+    "pattern11.ts": {
+      "size": 158296,
+      "sha256": "b12e949f10e6d28aff0d5541cd6a5981248c50eef4fe182fd40555c9dcae0ea0"
+    },
+    "pattern2.ts": {
+      "size": 142128,
+      "sha256": "b1ce10aea01f88068a0c17786db0890a85647655d3f6bf8db8cb70df99cf6a16"
+    },
+    "pattern3.ts": {
+      "size": 166944,
+      "sha256": "961b0c2ca1a0f5b4faf582302dede5befbb227b2dc5783ededdf92543ddcc974"
+    },
+    "pattern4.ts": {
+      "size": 142692,
+      "sha256": "a4f36a91fe43109b807795d6fbeb50d478cf980e102cb8b21853ec17c297afb3"
+    },
+    "pattern5.ts": {
+      "size": 158672,
+      "sha256": "b2111c70a229add3342568846978b6e1ad5ec7bc60c1c7fa4e4e4179c39e2dce"
+    },
+    "pattern6.ts": {
+      "size": 143068,
+      "sha256": "7f96ffebd7d9a4a218db29c25e90967cdf5d376b910d0ca0c2527bf1c922197b"
+    },
+    "pattern7.ts": {
+      "size": 165816,
+      "sha256": "2dcd3b82b1beeac2a1efbd4b822dd6989a805b06c3bad38a318dc700f4ea34e9"
+    },
+    "pattern8.ts": {
+      "size": 144196,
+      "sha256": "7b1a779ee9612ac233517cb4ac58773b24be4961132617b6911a3c1a85ab1fe8"
+    },
+    "pattern9.ts": {
+      "size": 165440,
+      "sha256": "ffab56de211c2c4ac2f8a39ab4aba39fe2de305ee02bad37b5659eb5b9546bb2"
+    }
+  }
+}
