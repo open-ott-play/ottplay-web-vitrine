@@ -61,12 +61,28 @@ A compatible upstream bundle contains the `hosted-profile-v1` and
 publication reject missing files and older runtimes, even when their release
 checksums are valid. These tripwires complement runtime acceptance tests.
 
-Preparation stages the exact repository-owned `local/hosted.js`,
-`local/swop.json`, `.herenow/proxy.json`, and `.herenow/data.json`. It inserts
-`<script src="/local/hosted.js"></script>` as the first synchronous script in
-`index.html`. Profile initialization must happen before any player code runs;
+Preparation copies the reviewed `local/swop.json`, `.herenow/proxy.json`, and
+`.herenow/data.json`, and derives `local/hosted.js` from its reviewed template.
+It inserts that profile with a content-hash query as the first synchronous script
+in `index.html`. Profile initialization must happen before any player code runs;
 async or delayed configuration could select a legacy server transport. Archives
 containing their own conflicting profile or publication controls fail preparation.
+
+The derived profile selects `hosted-runtime/<graph-sha>/hosted/epg-worker.js`.
+Preparation copies the exact worker, pako, SAX, runtime polyfills and shared core
+from the verified release into that directory, preserving their relative import
+paths. The graph hash binds every path and exact file bytes; the profile hash then
+binds its selected graph. Validation recomputes both and rejects altered files,
+extra graph entries, symlinks, stale URLs and unreviewed import dependencies.
+Original release JavaScript remains unchanged and available at its original paths.
+
+Before deployment, retain a separate browser acceptance context with HTTP caching
+enabled and prime the previous profile, worker and imported dependencies. After
+deployment, navigate normally and verify the newly selected profile and complete
+worker graph against the staged hashes. Do not use request interception for this
+check: it can disable the browser HTTP cache and conceal stale assets. Also verify
+the entry page is revalidated and that no service worker substitutes old files.
+The guarded runtime tests that block retired infrastructure remain a separate check.
 
 The profile selects:
 

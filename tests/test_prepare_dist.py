@@ -54,7 +54,8 @@ class PrepareDistributionTests(unittest.TestCase):
                              "js/runtime-polyfills.js", "js/ottplay-core.js",
                              "swop-input/index.html", "swop-input/app.js"):
                     entry = tarfile.TarInfo(name)
-                    data = b"runtime-fixture"
+                    data = (b'importScripts("../js/runtime-polyfills.js", "../js/ottplay-core.js", "pako-inflate.js", "sax.js");\nself.onmessage = function () {};\n'
+                            if name == "hosted/epg-worker.js" else b"/* runtime-fixture */\n")
                     entry.size = len(data)
                     archive.addfile(entry, io.BytesIO(data))
             if demo:
@@ -97,7 +98,7 @@ class PrepareDistributionTests(unittest.TestCase):
 
     def test_verified_stable_bytes_are_prepared_without_publishing(self):
         self.execute()
-        self.assertIn('<head>\n        <script src="/local/hosted.js"></script>', (self.root / "dist/index.html").read_text())
+        self.assertRegex((self.root / "dist/index.html").read_text(), r'<head>\n        <script src="/local/hosted\.js\?v=[0-9a-f]{64}"></script>')
         self.assertIn(b"hosted-profile-v1", (self.root / "dist/dist/player.js").read_bytes())
         self.assertFalse((self.root / "dist/player.js").exists())
         source = self.root / "static/demo"
@@ -143,6 +144,15 @@ class PrepareDistributionTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("SWOP relay requires", result.stderr)
 
+    def test_publish_wrapper_rejects_tampered_runtime_graph_before_network_access(self):
+        self.execute()
+        wrapper = Path(__file__).parents[1] / "scripts/publish-herenow.sh"
+        graph = next((self.root / "dist/hosted-runtime").iterdir())
+        (graph / "js/ottplay-core.js").write_text("changed dependency")
+        result = subprocess.run(["bash", str(wrapper), str(self.root / "dist")], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Hosted runtime graph", result.stderr)
+
     def test_publish_wrapper_refuses_missing_or_modified_swop_proxy_before_network_access(self):
         self.execute()
         wrapper = Path(__file__).parents[1] / "scripts/publish-herenow.sh"
@@ -158,7 +168,7 @@ class PrepareDistributionTests(unittest.TestCase):
 
     def test_upstream_swop_configuration_or_publication_controls_are_rejected(self):
         original = self.archive
-        for name in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json"):
+        for name in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json", "hosted-runtime/unexpected.js"):
             result = io.BytesIO()
             with tarfile.open(fileobj=io.BytesIO(original), mode="r:gz") as source, \
                  tarfile.open(fileobj=result, mode="w:gz") as target:

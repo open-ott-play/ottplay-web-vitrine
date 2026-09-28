@@ -70,12 +70,22 @@ tile remains available. The publishing wrapper rejects missing or modified
 bootstrap files before uploading, just as it checks the shared demo media.
 The host must serve both JSON files as `application/json` with CORS enabled.
 
-Every publication stages `static/local/hosted.js` and inserts its synchronous
-script before the upstream HTML's other scripts. This versioned hosted profile
+Every publication derives `local/hosted.js` from the reviewed
+`static/local/hosted.js` template and inserts its synchronous script before the
+upstream HTML's other scripts. The script URL includes its content hash. This hosted profile
 selects client EPG, here.now Site Data pairing and an exact VPortal provider
 route. `static/local/swop.json` is deliberately empty: this installation no
 longer selects the old Worker relay. Local and native player installations keep
 their separate transport configuration.
+
+The EPG worker and its four imported dependencies are copied byte for byte from
+the verified release into `hosted-runtime/<graph-sha>/`, preserving their relative
+paths. The profile selects that worker URL, so a change to any dependency gives
+the entire worker graph a new address. A query on the worker alone would leave
+its `importScripts` dependencies cached under their old URLs. The original release
+files remain available; no release JavaScript is rewritten or rebuilt. Publication
+recomputes the hashes and rejects missing, modified or unexpected graph files.
+Reload the player after deployment to load the new entry page and profile.
 
 The repository-owned `static/.herenow/data.json` declares `swop_pairs`. SWOP's
 **♥™** action creates a pairing record and displays a QR/link carrying a secret
