@@ -13,7 +13,7 @@ all routes and refuses missing routes, changed upstreams and broad M3U proxies.
 ## Backend and ownership
 
 `deploy/epg/ottplay-epg.yaml` owns a single Kubernetes Deployment and ClusterIP
-Service in `synology-apps` on `k3s-heaven`.
+Service in `synology-apps` on the `mp` node of `k3s-heaven`.
 The manifest also owns a narrow, additive egress policy in `cloudflared`, allowing
 only the h7 connector pods to reach this service's pods on TCP 8080.
 The existing private registry contains

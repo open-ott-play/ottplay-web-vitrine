@@ -19,7 +19,7 @@ spec:
     spec:
       automountServiceAccountToken: false
       nodeSelector:
-        kubernetes.io/hostname: syn
+        kubernetes.io/hostname: mp
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
