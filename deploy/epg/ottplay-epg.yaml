@@ -28,8 +28,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: epg
-          # Unmodified linux/amd64 OCI image from the v1.1.46 stable release.
-          image: 192.168.167.25:5050/ottplay-epg@sha256:898c494ac8be47e9e629ebd5704487c2daf78f1067b104e5525f996a4b112ded
+          # Unmodified linux/amd64 OCI image from the v1.1.43 stable release.
+          image: 192.168.167.25:5050/ottplay-epg@sha256:345f53b4cbb9c255dbdea65d65af8a74ff90095535478d8ba701918271976ae0
           ports:
             - name: http
               containerPort: 8080

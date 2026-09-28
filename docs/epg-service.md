@@ -17,16 +17,23 @@ Service in `synology-apps` on the `mp` node of `k3s-heaven`.
 The manifest also owns a narrow, additive egress policy in `cloudflared`, allowing
 only the h7 connector pods to reach this service's pods on TCP 8080.
 The existing private registry contains
-the unmodified linux/amd64 OCI image from the stable `ottplay-foss` v1.1.46 asset:
+the unmodified linux/amd64 OCI image from the stable `ottplay-foss` v1.1.43 asset:
 
-- Release container archive SHA-256: `a972466973447b602d5aaabb424dda2f04bb18b3ca5d4a51a98e1d5e51d922b2`.
-- Image manifest SHA-256: `898c494ac8be47e9e629ebd5704487c2daf78f1067b104e5525f996a4b112ded`.
-- Source: `a291141c4c06c6c80727e2e373ba0322a77696fa`, release validation run `36359779914`.
+- Release container archive SHA-256: `77146883063a9ff656c973ebaf862bbdce2a0a19bee35e2c5c7328116156848b`.
+- Image manifest SHA-256: `345f53b4cbb9c255dbdea65d65af8a74ff90095535478d8ba701918271976ae0`.
+- Source: `9eb64715c4630ef59235e4a97ac3b5a769ff041f`, release validation run `35743019208`.
 
 The source manifest, tag, successful Release gate, archive hash and individual
 OCI blob hashes were verified before import. Image promotion must retain the
 verified bytes; do not substitute a mutable registry tag. The pinned backend
 version is independent of the frontend version published to here.now.
+
+The v1.1.46 server was tested first, but its shared-runtime XMLTV processing
+was too slow for this workload: a single РЕН ТВ HD lookup took 33.76 seconds
+on the deployed node and repeatedly exceeded readiness timeouts. The v1.1.43
+server retains the compatible text/JSON protocol and native Rust parser.
+Before upgrading this backend pin, measure a full-feed cold start and a large
+playlist lookup; small parser unit tests alone do not establish usable latency.
 
 The service loads `https://cdn.epg.one/epg2.xml.gz` into memory and refreshes every
 two hours. This is the CDN destination of the default `epg.it999.ru` feed; using
@@ -35,7 +42,7 @@ One replica keeps channel matching and subsequent hash lookup on the
 same process. Restarting clears the in-memory channel registry; clients must
 reload their playlist afterward. `/health` confirms HTTP availability; readiness
 additionally waits for a real РЕН ТВ HD match so a cold server cannot serve empty
-matches. Parsing the full XMLTV feed on this node takes several minutes. Memory
+matches. Memory
 headroom allows the old cache and a replacement feed to coexist during refresh.
 Run the programme smoke check before enabling routes.
 
