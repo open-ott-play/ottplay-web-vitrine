@@ -5,6 +5,7 @@ metadata:
   namespace: synology-apps
 spec:
   replicas: 1
+  progressDeadlineSeconds: 1800
   # Matching stores channel IDs in memory; keep lookups and reads on one pod.
   strategy:
     type: Recreate
@@ -43,15 +44,24 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 512Mi
             limits:
               cpu: "2"
-              memory: 1Gi
+              # Refresh retains the old cache while parsing the 350 MB XML feed.
+              memory: 2Gi
           readinessProbe:
-            httpGet:
-              path: /health
-              port: http
-            periodSeconds: 5
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - >-
+                  wget -q -O - --header='Content-Type: text/plain'
+                  --post-data="$(printf '{}\n\t\n\n\t\n1-0-0-0~%%D0%%A0%%D0%%95%%D0%%9D%%20%%D0%%A2%%D0%%92%%20HD\n')"
+                  http://127.0.0.1:8080/m3u/match-channels
+                  | grep -Eq '1~local~[a-f0-9]{16}'
+            # HTTP starts before XMLTV has loaded; do not serve empty matches.
+            periodSeconds: 20
+            timeoutSeconds: 10
           livenessProbe:
             httpGet:
               path: /health

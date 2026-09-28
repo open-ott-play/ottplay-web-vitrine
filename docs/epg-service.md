@@ -31,8 +31,11 @@ version is independent of the frontend version published to here.now.
 The service loads `http://epg.it999.ru/epg2.xml.gz` into memory and refreshes every
 two hours. One replica keeps channel matching and subsequent hash lookup on the
 same process. Restarting clears the in-memory channel registry; clients must
-reload their playlist afterward. `/health` confirms HTTP availability, not a
-warmed programme cache: run the programme smoke check before enabling routes.
+reload their playlist afterward. `/health` confirms HTTP availability; readiness
+additionally waits for a real РЕН ТВ HD match so a cold server cannot serve empty
+matches. Parsing the full XMLTV feed on this node takes several minutes. Memory
+headroom allows the old cache and a replacement feed to coexist during refresh.
+Run the programme smoke check before enabling routes.
 
 `4alvit/terraform-cloudflare-alvit` owns the proxied `epg.2560801.xyz` DNS record
 and the h7 tunnel route to `http://ottplay-epg.synology-apps.svc.cluster.local:8080`.
