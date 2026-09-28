@@ -28,8 +28,10 @@ OCI blob hashes were verified before import. Image promotion must retain the
 verified bytes; do not substitute a mutable registry tag. The pinned backend
 version is independent of the frontend version published to here.now.
 
-The service loads `http://epg.it999.ru/epg2.xml.gz` into memory and refreshes every
-two hours. One replica keeps channel matching and subsequent hash lookup on the
+The service loads `https://cdn.epg.one/epg2.xml.gz` into memory and refreshes every
+two hours. This is the CDN destination of the default `epg.it999.ru` feed; using
+it directly over HTTPS avoids an unavailable intermediate HTTP redirect.
+One replica keeps channel matching and subsequent hash lookup on the
 same process. Restarting clears the in-memory channel registry; clients must
 reload their playlist afterward. `/health` confirms HTTP availability; readiness
 additionally waits for a real РЕН ТВ HD match so a cold server cannot serve empty

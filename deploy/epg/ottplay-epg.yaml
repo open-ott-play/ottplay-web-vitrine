@@ -35,7 +35,7 @@ spec:
               containerPort: 8080
           env:
             - name: EPG_URLS
-              value: http://epg.it999.ru/epg2.xml.gz
+              value: https://cdn.epg.one/epg2.xml.gz
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
