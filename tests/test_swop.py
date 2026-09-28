@@ -221,6 +221,37 @@ class SwopPublicationTests(unittest.TestCase):
             path.unlink()
             original.rename(path)
 
+    def test_self_closing_nonvoid_elements_cannot_hide_the_bootstrap(self):
+        self.runtime()
+        stage_swop(self.target, self.source)
+        path = self.target / "index.html"
+        original = path.read_text()
+        tag = SWOP["bootstrap_tag"]((self.target / "local/hosted.js").read_text())
+        for wrapper in ("template", "noscript", "script", "style", "title", "textarea"):
+            changed = original.replace(tag, "<" + wrapper + "/>" + tag + "</" + wrapper + ">")
+            path.write_text(changed)
+            with self.subTest(wrapper=wrapper), self.assertRaisesRegex(SystemExit, "Hosted bootstrap"):
+                verify_swop(self.target)
+        # Unlike non-void containers, a self-closing meta stays outside the
+        # script's ancestry and must not reject an active synchronous profile.
+        path.write_text(original.replace(tag, '<meta charset="utf-8"/>' + tag))
+        verify_swop(self.target)
+
+    def test_raw_text_cannot_forge_a_head_for_an_inert_bootstrap(self):
+        self.runtime()
+        stage_swop(self.target, self.source)
+        path = self.target / "index.html"
+        original = path.read_text()
+        tag = SWOP["bootstrap_tag"]((self.target / "local/hosted.js").read_text())
+        for wrapper in ("template", *SWOP["_BootstrapParser"].CDATA_CONTENT_ELEMENTS):
+            for ending in (">", "/>"):
+                # These apparent head tags are text in the browser, not active
+                # containers in which the following profile can execute.
+                changed = original.replace(tag, "<" + wrapper + ending + "</head><head>" + tag + "</" + wrapper + ">")
+                path.write_text(changed)
+                with self.subTest(wrapper=wrapper, ending=ending), self.assertRaisesRegex(SystemExit, "Hosted bootstrap"):
+                    verify_swop(self.target)
+
     def test_dependency_only_change_invalidates_graph_profile_and_bootstrap(self):
         self.runtime()
         release = self.root / "release"
