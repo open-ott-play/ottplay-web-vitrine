@@ -149,6 +149,10 @@ class _BootstrapParser(HTMLParser):
         self.parents = []
 
     def handle_starttag(self, tag, attrs):
+        # HTML plaintext consumes the rest of the document, even an apparent
+        # </plaintext>. Reject it instead of treating it as closable raw text.
+        if tag == "plaintext":
+            raise SystemExit("Hosted bootstrap document must not contain plaintext")
         if tag == "script":
             self.scripts.append((self.get_starttag_text(), tuple(self.parents)))
         if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}:
