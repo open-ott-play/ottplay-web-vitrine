@@ -53,85 +53,84 @@ clone that repository into `.ci-tools/herenow`, check out this exact commit and
 use `scripts/publish-herenow.sh`. The wrapper rejects a different or modified
 publisher revision.
 
-## SWOP relay
+## Hosted profile
 
-The same publication manifest also owns the [M3U EPG routes](epg-service.md).
-Run its РЕН ТВ HD smoke check after publication; an HTML 200 response is a failure.
+A compatible upstream bundle contains the `hosted-profile-v1` and
+`ottplay.swop.v2` runtime markers plus `hosted/epg-worker.js`,
+`swop-input/index.html`, and `swop-input/app.js`. Preparation and direct
+publication reject missing files and older runtimes, even when their release
+checksums are valid. These tripwires complement runtime acceptance tests.
 
-Choose a stable player release that implements the installation relay's
-`sessionToken` protocol. Older Device ID allowlist builds are incompatible even
-if their release checksums and provenance are valid. Preparation and direct
-publication both reject a missing `player.js`, a bundle without the
-`sessionToken` marker, or one still containing `Allowlist this Device ID`.
-This compatibility guard complements the release and live runtime checks; it
-does not replace them.
+Preparation stages the exact repository-owned `local/hosted.js`,
+`local/swop.json`, `.herenow/proxy.json`, and `.herenow/data.json`. It inserts
+`<script src="/local/hosted.js"></script>` as the first synchronous script in
+`index.html`. Profile initialization must happen before any player code runs;
+async or delayed configuration could select a legacy server transport. Archives
+containing their own conflicting profile or publication controls fail preparation.
 
-Preparation also stages `static/local/swop.json` and
-`static/.herenow/proxy.json`. The client selects `/swop`; the exact POST
-session-creation, value-polling and `/vportal/api` routes are forwarded to
-`swop.2560801.xyz`.
-The publishing wrapper checks both files before calling here.now, including
-their methods, upstreams, rate limits and server-side variable reference.
-An upstream archive containing its own `local/swop.json` or `.herenow/`
-publication controls is rejected and must be reconciled explicitly.
+The profile selects:
 
-Provision `OTTPLAY_SWOP_INSTALLATION_TOKEN` with the here.now variables API in
-workspace `ottplay` (`X-HereNow-Account: ottplay`), pinning `allowedUpstreams` to
-`swop.2560801.xyz`. Register the corresponding installation credential and
-allowed player origins in SWOP. This here.now credential uses the explicit
-`originPolicy: "trusted-proxy"` transport: here.now enforces browser-origin
-checks and strips Origin, Referer and custom browser headers upstream. Other
-installation credentials retain `require-origin`. Do not inject a constant
-Origin header to pretend that browser provenance was preserved. Client identity
-and the per-session read capability travel in the JSON body.
+- Client XMLTV loading and parsing from `https://cdn.epg.one/epg2.xml.gz` in a
+  Web Worker, refreshing every two hours and caching the validated guide locally.
+- SWOP QR/link pairing through here.now Site Data collection `swop_pairs`.
+- One fixed VPortal provider route at `POST /vportal/provider-1`.
 
-Use an installation credential, never the SWOP administrator token. Neither
-the public configuration nor release assets may contain its value. The browser
-keeps its own client identity; it does not need to be individually allowlisted.
+No installation credential or separately operated runtime is required. The
+validator rejects the retired routes to `epg.2560801.xyz` and `swop.2560801.xyz`,
+additional proxy routes, embedded secrets, changed upstreams and changed schemas.
 
-The creation route allows 60 requests/hour/IP; polling allows 7200/hour/IP.
-These are shared by clients behind one NAT. The polling budget supports five
-continuously active clients at the player's 2.5-second interval; text entry
-normally uses a shorter fraction of the hour. Reassess both limits for a larger shared network
-and adjust the manifest and its validator together. Do not rely on here.now's
-default 100/hour/IP for polling.
+## SWOP pairing
 
-After publishing, inspect the finalize response for proxy-manifest warnings
-and test creation, form submission and one-time polling through the public
-player URL. An invalid proxy manifest can leave the static site live while
-silently disabling its routes. The currently pinned publishing helper does not
-surface these warnings, so successful static-file publication alone is not a
-SWOP acceptance check. Also verify foreign browser origins and direct SWOP
-requests without installation credentials are rejected, and confirm the public
-`/.herenow/proxy.json` is not served. Include the manifest on every subsequent
-publication: here.now does not retain omitted routes.
+The Site Data manifest allows public CRUD only on the reviewed bounded schema.
+The TV creates a record and the phone/TV address that returned ID directly. A
+pair-specific secret in the QR/link fragment protects authenticated encrypted
+offer and reply envelopes. There is no shared plaintext secret in a public
+record. Public access to the same Site is not proof of membership in one pair.
+The client validates message direction, expiry and pair/record binding and
+consumes only once locally. It deletes completed/cancelled records best effort.
+This protocol does not promise a server-side atomic consume or native record TTL.
 
-Server-side injection prevents exposing a reusable installation secret to the
-browser. Origin checks restrict browser copies, but a public relay cannot prove
-that a non-browser caller is running the original player: another server can
-relay requests through the public installation. Short-lived session
-capabilities and rate limits bound that exposure; absolute prevention requires
-additional trusted identity.
+The manifest sets `1800/hour/ip`, allowing five-second polling and session
+mutations with headroom for a few active devices behind one NAT. Limits are
+approximate; handle HTTP 429 and do not keep polling after cancellation or expiry.
+Measure the actual public API and validate deletion behavior before promotion;
+provider documentation does not guarantee whether soft deletion reclaims the
+record quota. Never store user input or pairing keys in Site Data unencrypted.
 
-## VPortal relay
+Acceptance includes opening the QR on another device, receiving the current
+editor draft, submitting text, confirming it is applied exactly once and
+cancelling without changing the draft. Test two concurrent pairs, tampered
+messages, wrong keys, expired messages, retransmission and a missing record.
+All browser calls must target this Site's `/.herenow/data/swop_pairs` paths,
+without contacting the old SWOP Worker. Test old LG cryptographic support.
 
-The static site needs `POST /vportal/api` in addition to the player bundle.
-Its body is `{ "url": "...", "params": { "app": "ott-play", "key": "..." } }`,
-matching the local OTT server. The route uses the same server-side installation
-credential and browser-origin boundary as SWOP; a legacy Device ID allowlist
-does not authorize VPortal requests.
+## VPortal route
 
-Deploy the installation service with its VPortal handler, then configure
-`vportal_endpoints` in its Terraform workspace. This becomes the
-`VPORTAL_ENDPOINTS_JSON` binding: a list of exact operator-approved API URLs.
-Keep subscription keys out of this list. An empty list disables the relay;
-an unknown destination is rejected. Redirects are refused to prevent forwarding
-the user's key to another destination. The endpoint is rate-limited to
-1200 requests/hour/IP at here.now and bounded again at the service.
+The approved fixed upstream is `http://cd3c21307c36.vportalu.net/api/v1/`.
+The published manifest pins method POST and JSON headers; the hosted client
+matches the configured URL exactly, then sends provider params directly,
+including `app: "ott-play"` and the user's key in the JSON body. Unknown URLs
+fail before a network request. Native clients still use their direct transport;
+local server clients retain the existing `/vportal/api` envelope.
 
-The publishing validator requires this exact route, method, upstream, rate
-limit and secret reference. After publication, test a configured portal's root
-and a category through the site, plus rejection of an unapproved destination
-and a foreign browser origin. API errors must not echo request keys or upstream
-bodies. Video playback still depends on the TV's supported formats and reachable
-media URLs; the relay carries catalog JSON, not media bytes.
+The here.now route allows 1200 requests/hour/IP. Validate a root catalog and a
+category with an authorized account, including content type, status handling and
+provider redirect behavior. The previous Worker performed additional response
+size/timeout/redirect enforcement; here.now's transparent proxy does not document
+identical controls. Do not claim that the old Worker policy survives unchanged.
+Errors in the UI must not display request keys or upstream error bodies.
+
+## Publication acceptance and retirement
+
+Inspect finalize warnings for both manifests. A successful static upload alone
+does not prove proxy routes or Site Data were accepted. Preserve demo and MSX
+files and verify the phone companion loads. Run browser EPG checks for РЕН ТВ HD
+(current programme and archive), repeat with a warm cache, and verify TV playback
+remains responsive during refresh. See [EPG acceptance](epg-service.md).
+
+Only after the new production runtime passes those checks remove the dedicated
+EPG Deployment, Service and NetworkPolicy and their DNS/tunnel entries. Do not
+remove unrelated services or the whole h7 tunnel. Retire the SWOP Worker only
+after confirming no other installations still use it; removing this site's
+routes already eliminates its dependency on that Worker. Keep a recorded prior
+here.now version and infrastructure manifests for a reviewed rollback.

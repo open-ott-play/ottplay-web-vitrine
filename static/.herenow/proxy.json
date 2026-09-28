@@ -1,48 +1,14 @@
 {
   "proxies": {
-    "/m3u/match-channels": {
-      "upstream": "https://epg.2560801.xyz/m3u/match-channels",
-      "method": "POST",
-      "rateLimit": "600/hour/ip"
-    },
-    "/m3u/match-logos": {
-      "upstream": "https://epg.2560801.xyz/m3u/match-logos",
-      "method": "POST",
-      "rateLimit": "600/hour/ip"
-    },
-    "/epg/*": {
-      "upstream": "https://epg.2560801.xyz/epg/",
-      "method": "GET",
-      "rateLimit": "7200/hour/ip"
-    },
-    "/logo/*": {
-      "upstream": "https://epg.2560801.xyz/logo/",
-      "method": "GET",
-      "rateLimit": "7200/hour/ip"
-    },
-    "/vportal/api": {
-      "upstream": "https://swop.2560801.xyz/vportal/api",
+    "/vportal/provider-1": {
+      "upstream": "http://cd3c21307c36.vportalu.net/api/v1/",
       "method": "POST",
       "headers": {
-        "Authorization": "Bearer ${OTTPLAY_SWOP_INSTALLATION_TOKEN}"
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "OTT-play-FOSS/1.0"
       },
       "rateLimit": "1200/hour/ip"
-    },
-    "/swop/session": {
-      "upstream": "https://swop.2560801.xyz/session",
-      "method": "POST",
-      "headers": {
-        "Authorization": "Bearer ${OTTPLAY_SWOP_INSTALLATION_TOKEN}"
-      },
-      "rateLimit": "60/hour/ip"
-    },
-    "/swop/val": {
-      "upstream": "https://swop.2560801.xyz/val",
-      "method": "POST",
-      "headers": {
-        "Authorization": "Bearer ${OTTPLAY_SWOP_INSTALLATION_TOKEN}"
-      },
-      "rateLimit": "7200/hour/ip"
     }
   }
 }

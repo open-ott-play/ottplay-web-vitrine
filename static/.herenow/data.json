@@ -1,0 +1,37 @@
+{
+  "collections": {
+    "swop_pairs": {
+      "fields": {
+        "v": {
+          "type": "integer",
+          "required": true,
+          "minimum": 1,
+          "maximum": 1
+        },
+        "offer": {
+          "type": "string",
+          "maxLength": 6500,
+          "default": ""
+        },
+        "reply": {
+          "type": "string",
+          "maxLength": 6500,
+          "default": ""
+        },
+        "ack": {
+          "type": "string",
+          "maxLength": 1000,
+          "default": ""
+        }
+      },
+      "access": {
+        "read": "public",
+        "insert": "public",
+        "update": "public",
+        "delete": "public"
+      },
+      "publicMutation": "open",
+      "rateLimit": "1800/hour/ip"
+    }
+  }
+}
