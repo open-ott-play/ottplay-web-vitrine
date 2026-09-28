@@ -34,7 +34,7 @@ class PrepareDistributionTests(unittest.TestCase):
         self.checksum = None
 
     def tar(self, name="index.html", symlink=False, demo=False,
-            runtime=b'function poll(session){return JSON.stringify({sessionToken:session.sessionToken});}'):
+            runtime=b'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2";'):
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w:gz") as archive:
             entry = tarfile.TarInfo(name)
@@ -43,13 +43,18 @@ class PrepareDistributionTests(unittest.TestCase):
                 entry.linkname = "/etc/passwd"
                 archive.addfile(entry)
             else:
-                data = b"<!doctype html><title>verified</title>"
+                data = b'<!doctype html><html><head><title>verified</title></head><body></body></html>'
                 entry.size = len(data)
                 archive.addfile(entry, io.BytesIO(data))
             if runtime is not None:
                 entry = tarfile.TarInfo("dist/player.js")
                 entry.size = len(runtime)
                 archive.addfile(entry, io.BytesIO(runtime))
+                for name in ("hosted/epg-worker.js", "swop-input/index.html", "swop-input/app.js"):
+                    entry = tarfile.TarInfo(name)
+                    data = b"runtime-fixture"
+                    entry.size = len(data)
+                    archive.addfile(entry, io.BytesIO(data))
             if demo:
                 entry = tarfile.TarInfo("demo/pattern.mp4")
                 archive.addfile(entry, io.BytesIO())
@@ -90,8 +95,8 @@ class PrepareDistributionTests(unittest.TestCase):
 
     def test_verified_stable_bytes_are_prepared_without_publishing(self):
         self.execute()
-        self.assertEqual((self.root / "dist/index.html").read_bytes(), b"<!doctype html><title>verified</title>")
-        self.assertIn(b"sessionToken", (self.root / "dist/dist/player.js").read_bytes())
+        self.assertIn('<head>\n        <script src="/local/hosted.js"></script>', (self.root / "dist/index.html").read_text())
+        self.assertIn(b"hosted-profile-v1", (self.root / "dist/dist/player.js").read_bytes())
         self.assertFalse((self.root / "dist/player.js").exists())
         source = self.root / "static/demo"
         staged = self.root / "dist/demo"
@@ -105,9 +110,11 @@ class PrepareDistributionTests(unittest.TestCase):
         self.assertEqual(content["action"], "link:https://player.ottplay.here.now/")
         self.assertEqual(content["pages"][0]["items"][0]["action"], content["action"])
         swop = json.loads((self.root / "dist/local/swop.json").read_text())
-        self.assertEqual(swop, {"swopBaseUrl": "/swop"})
+        self.assertEqual(swop, {})
         self.assertEqual((self.root / "dist/.herenow/proxy.json").read_bytes(),
                          (self.root / "static/.herenow/proxy.json").read_bytes())
+        self.assertEqual((self.root / "dist/.herenow/data.json").read_bytes(),
+                         (self.root / "static/.herenow/data.json").read_bytes())
 
     def test_publish_wrapper_rejects_a_shared_swop_device_identity(self):
         self.execute()
@@ -149,7 +156,7 @@ class PrepareDistributionTests(unittest.TestCase):
 
     def test_upstream_swop_configuration_or_publication_controls_are_rejected(self):
         original = self.archive
-        for name in ("local/swop.json", ".herenow/proxy.json", ".herenow/data.json"):
+        for name in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json"):
             result = io.BytesIO()
             with tarfile.open(fileobj=io.BytesIO(original), mode="r:gz") as source, \
                  tarfile.open(fileobj=result, mode="w:gz") as target:

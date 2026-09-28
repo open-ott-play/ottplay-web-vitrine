@@ -39,8 +39,11 @@ approved ottplay-foss stable release  →  verify and unpack ottplay-foss-dist.t
 
 - **No** `ottplay-server` / HLS proxy / command-queue on here.now.
 - Playlists and video streams must be endpoints the browser can reach (HTTPS and CORS permitting).
-- Same-origin routes provide M3U EPG, SWOP text entry and the configured VPortal catalog.
-  M3U programme data comes from the separately deployed [EPG service](docs/epg-service.md).
+- M3U EPG is downloaded from its public XMLTV provider and parsed in the client Web Worker.
+  The validated guide is cached on the device; see [EPG operation](docs/epg-service.md).
+- SWOP text entry uses encrypted pairing records in here.now Site Data. VPortal uses
+  a fixed here.now proxy directly to the approved provider. No k3s service, private
+  Cloudflare Worker, tunnel, or installation token is part of this hosted profile.
 
 ## Shared demo media
 
@@ -67,40 +70,43 @@ tile remains available. The publishing wrapper rejects missing or modified
 bootstrap files before uploading, just as it checks the shared demo media.
 The host must serve both JSON files as `application/json` with CORS enabled.
 
-The publication also includes `static/local/swop.json`, which selects the
-same-origin `/swop` text-entry relay. Every browser/TV using this installation
-can use the keyboard's **♥™** action without a Device ID allowlist. The
-repository-owned `static/.herenow/proxy.json` maps `POST /swop/session`,
-`POST /swop/val` and `POST /vportal/api` to the installation service.
-here.now injects the installation credential
-from a workspace service variable on the server; it is never included in the
-player's public configuration or JavaScript. Preparation and the publishing
-wrapper verify both files and reject embedded credentials or changed routes.
+Every publication stages `static/local/hosted.js` and inserts its synchronous
+script before the upstream HTML's other scripts. This versioned hosted profile
+selects client EPG, here.now Site Data pairing and an exact VPortal provider
+route. `static/local/swop.json` is deliberately empty: this installation no
+longer selects the old Worker relay. Local and native player installations keep
+their separate transport configuration.
 
-Set the workspace variable `OTTPLAY_SWOP_INSTALLATION_TOKEN` with
-`allowedUpstreams: ["swop.2560801.xyz"]` and register the matching installation
-in SWOP before deploying. The manifest contains only the variable reference and
-must be included in every publication; here.now drops proxy routes when a new
-version omits it. See the [SWOP deployment checks](docs/release-workflow.md#swop-relay).
+The repository-owned `static/.herenow/data.json` declares `swop_pairs`. SWOP's
+**♥™** action creates a pairing record and displays a QR/link carrying a secret
+in the URL fragment. Phone and player exchange authenticated encrypted payloads;
+keys, drafts and provider passwords must never appear in Site Data as plaintext.
+Same-origin access identifies the installation, while the pairing secret binds
+the two devices. Collection reads and mutations are public, so the client must
+reject tampered, expired, wrong-pair and already consumed messages. The record
+is deleted on completion or cancellation; deletion/quota behavior must be
+checked on here.now. See the [hosted acceptance checks](docs/release-workflow.md#hosted-profile).
 
-VPortal uses the same `/vportal/api` JSON contract as the local OTT server.
-The relay accepts only exact upstream endpoints configured by the operator in
-the Worker's `VPORTAL_ENDPOINTS_JSON` allowlist. Configure that list before
-publishing; a static player bundle alone cannot load a browser VPortal catalog.
-Portal subscription keys remain in the user's player settings and request body;
-they must never be copied into this repository or the proxy manifest. The relay
-does not proxy video streams or transcode media.
+`static/.herenow/proxy.json` contains one exact `POST /vportal/provider-1`
+route to the already approved VPortal API. The hosted client sends the provider's
+JSON body directly through that route. Unknown provider URLs fail locally;
+there is no request-supplied upstream or wildcard VPortal proxy. User subscription
+keys remain in their settings and POST body, never the checked-in profile or
+manifest. VPortal carries catalog JSON, not video streams. Include this manifest
+on every publication: omitted proxy manifests remove routes from the next version.
 
-M3U channel matching, programme JSON and generated logos use the same proxy
-manifest. These routes point to the dedicated `epg.2560801.xyz` service and are
-validated on every publication, so a stable update cannot drop them. The
-[EPG runbook](docs/epg-service.md) covers deployment and a live РЕН ТВ HD check.
+The prior seven EPG/SWOP/VPortal routes to `*.2560801.xyz` are rejected by the
+publication validator. The former installation variable is no longer referenced.
+Retire the dedicated EPG resources only after validating the new profile on the
+public site and TV; the [EPG runbook](docs/epg-service.md) records that sequence.
 
 ### Publish a reviewed stable release
 
-Select a release with the SWOP installation/session-token protocol. The
-preparation and publication checks reject older Device ID allowlist bundles
-before they can replace the live player.
+Select a release with `hosted-profile-v1`, encrypted Site Data SWOP and the
+standalone EPG Worker and phone companion. Preparation and publication reject
+older bundles or missing assets before they can replace the live player. The
+marker is a compatibility tripwire; release checks and browser/TV acceptance
+remain required.
 
 1. Configure `HERENOW_API_KEY` in the protected production environment with access to the `ottplay` workspace. Review the workspace and site slug configured in the workflow.
 2. Run **Actions → Publish here.now → Run workflow** from the default branch with an exact stable `vX.Y.Z` tag from `open-ott-play/ottplay-foss`.
@@ -130,9 +136,8 @@ Keep the **`player`** workspace label pointed at that Site (here.now dashboard /
 | `HERENOW_SITE_SLUG` | Existing Site slug to `PUT` (update) instead of creating a new Site |
 | `HERENOW_WORKSPACE` | Defaults to `ottplay` |
 
-Do not commit `~/.herenow/credentials`, `.herenow/state.json`, or actual SWOP
-installation credentials. `static/.herenow/proxy.json` is a checked-in manifest
-containing a service-variable reference, never its value.
+Do not commit `~/.herenow/credentials`, `.herenow/state.json`, user playlist or
+provider keys. The hosted profile and manifests contain no installation secrets.
 
 ## Related
 

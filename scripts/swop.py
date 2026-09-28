@@ -1,4 +1,4 @@
-"""Stage the same-origin installation relays without publishing credentials."""
+"""Stage and verify the here.now profile without a separately operated backend."""
 import json
 from pathlib import Path
 import re
@@ -7,50 +7,61 @@ import sys
 
 
 CONFIG_PATH = Path("local/swop.json")
+HOSTED_PATH = Path("local/hosted.js")
 PROXY_PATH = Path(".herenow/proxy.json")
-EXPECTED_CONFIG = {"swopBaseUrl": "/swop"}
+DATA_PATH = Path(".herenow/data.json")
+EXPECTED_CONFIG = {}
+PROVIDER_URL = "http://cd3c21307c36.vportalu.net/api/v1/"
+HOSTED_CONFIG = {
+    "version": 1,
+    "epg": {
+        "source": "https://cdn.epg.one/epg2.xml.gz",
+        "workerUrl": "/hosted/epg-worker.js",
+        "refreshMs": 7200000,
+    },
+    "swop": {
+        "transport": "herenow",
+        "collection": "swop_pairs",
+        "entryUrl": "/swop-input/",
+    },
+    "vportal": {"routes": [{"upstream": PROVIDER_URL, "path": "/vportal/provider-1"}]},
+}
 EXPECTED_PROXY = {
     "proxies": {
-        "/m3u/match-channels": {
-            "upstream": "https://epg.2560801.xyz/m3u/match-channels",
+        "/vportal/provider-1": {
+            "upstream": PROVIDER_URL,
             "method": "POST",
-            "rateLimit": "600/hour/ip",
-        },
-        "/m3u/match-logos": {
-            "upstream": "https://epg.2560801.xyz/m3u/match-logos",
-            "method": "POST",
-            "rateLimit": "600/hour/ip",
-        },
-        "/epg/*": {
-            "upstream": "https://epg.2560801.xyz/epg/",
-            "method": "GET",
-            "rateLimit": "7200/hour/ip",
-        },
-        "/logo/*": {
-            "upstream": "https://epg.2560801.xyz/logo/",
-            "method": "GET",
-            "rateLimit": "7200/hour/ip",
-        },
-        "/vportal/api": {
-            "upstream": "https://swop.2560801.xyz/vportal/api",
-            "method": "POST",
-            "headers": {"Authorization": "Bearer ${OTTPLAY_SWOP_INSTALLATION_TOKEN}"},
+            "headers": {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "OTT-play-FOSS/1.0",
+            },
             "rateLimit": "1200/hour/ip",
-        },
-        "/swop/session": {
-            "upstream": "https://swop.2560801.xyz/session",
-            "method": "POST",
-            "headers": {"Authorization": "Bearer ${OTTPLAY_SWOP_INSTALLATION_TOKEN}"},
-            "rateLimit": "60/hour/ip",
-        },
-        "/swop/val": {
-            "upstream": "https://swop.2560801.xyz/val",
-            "method": "POST",
-            "headers": {"Authorization": "Bearer ${OTTPLAY_SWOP_INSTALLATION_TOKEN}"},
-            "rateLimit": "7200/hour/ip",
         },
     },
 }
+EXPECTED_DATA = {
+    "collections": {
+        "swop_pairs": {
+            "fields": {
+                "v": {"type": "integer", "required": True, "minimum": 1, "maximum": 1},
+                "offer": {"type": "string", "maxLength": 6500, "default": ""},
+                "reply": {"type": "string", "maxLength": 6500, "default": ""},
+                "ack": {"type": "string", "maxLength": 1000, "default": ""},
+            },
+            "access": {"read": "public", "insert": "public", "update": "public", "delete": "public"},
+            "publicMutation": "open",
+            "rateLimit": "1800/hour/ip",
+        },
+    },
+}
+HOSTED_SCRIPT = "window.__OTTPLAY_HOSTED__ = " + json.dumps(HOSTED_CONFIG, indent=2) + ";\n"
+BOOTSTRAP_TAG = '<script src="/local/hosted.js"></script>'
+REQUIRED_RUNTIME_ASSETS = (
+    Path("hosted/epg-worker.js"),
+    Path("swop-input/index.html"),
+    Path("swop-input/app.js"),
+)
 
 
 def _unique_object(pairs):
@@ -62,13 +73,18 @@ def _unique_object(pairs):
     return result
 
 
-def _read_json(directory, relative, label):
+def _regular_file(directory, relative, label):
     root = Path(directory)
     path = root / relative
     if root.is_symlink() or any((root / parent).is_symlink() for parent in relative.parents):
         raise SystemExit(f"{label} must not use symlink directories")
     if path.is_symlink() or not path.is_file():
         raise SystemExit(f"{label} is missing or is not a regular file")
+    return path
+
+
+def _read_json(directory, relative, label):
+    path = _regular_file(directory, relative, label)
     if path.stat().st_size > 8192:
         raise SystemExit(f"{label} is too large")
     try:
@@ -77,48 +93,64 @@ def _read_json(directory, relative, label):
         raise SystemExit(f"{label} must contain valid JSON without duplicate keys") from None
 
 
+def verify_hosted_bootstrap(directory):
+    path = _regular_file(directory, Path("index.html"), "Hosted bootstrap")
+    document = path.read_text()
+    first_script = re.search(r"<script\b[^>]*>", document, re.IGNORECASE)
+    if document.count(BOOTSTRAP_TAG) != 1 or not first_script or first_script.group() != BOOTSTRAP_TAG[:-9]:
+        raise SystemExit("Hosted bootstrap must load local/hosted.js synchronously before all player scripts")
+
+
 def verify_swop(directory):
-    config = _read_json(directory, CONFIG_PATH, "SWOP public configuration")
-    if config != EXPECTED_CONFIG:
-        raise SystemExit("SWOP public configuration must contain only the same-origin /swop service URL")
-    proxy = _read_json(directory, PROXY_PATH, "SWOP proxy manifest")
-    if proxy != EXPECTED_PROXY:
-        raise SystemExit("SWOP proxy manifest must contain only the approved routes and server-side secret reference")
-    # Files in this namespace are publication controls, not player assets.
-    if {path.name for path in (Path(directory) / ".herenow").iterdir()} != {"proxy.json"}:
+    if _read_json(directory, CONFIG_PATH, "SWOP public configuration") != EXPECTED_CONFIG:
+        raise SystemExit("SWOP public configuration must be empty; the hosted profile selects Site Data")
+    if _read_json(directory, PROXY_PATH, "SWOP proxy manifest") != EXPECTED_PROXY:
+        raise SystemExit("SWOP proxy manifest must contain only the approved fixed VPortal route without credentials")
+    if _read_json(directory, DATA_PATH, "SWOP Site Data manifest") != EXPECTED_DATA:
+        raise SystemExit("SWOP Site Data manifest must match the reviewed encrypted pairing schema")
+    hosted = _regular_file(directory, HOSTED_PATH, "Hosted public configuration")
+    if hosted.read_text() != HOSTED_SCRIPT:
+        raise SystemExit("Hosted public configuration must match the reviewed client EPG, SWOP and VPortal profile")
+    if {path.name for path in (Path(directory) / ".herenow").iterdir()} != {"proxy.json", "data.json"}:
         raise SystemExit("SWOP proxy manifest directory contains unexpected publication controls")
+    if (Path(directory) / "index.html").exists():
+        verify_hosted_bootstrap(directory)
 
 
 def verify_swop_runtime(directory):
-    """Reject older release bundles before enabling the session-capability relay.
-
-    This is a compatibility tripwire for the reviewed player protocol, not a
-    substitute for the release's runtime tests or checksum/provenance checks.
-    """
-    root = Path(directory)
-    runtime = root / "dist/player.js"
-    if root.is_symlink() or runtime.parent.is_symlink() or runtime.is_symlink() or not runtime.is_file():
-        raise SystemExit("SWOP relay requires a compatible dist/player.js release bundle")
+    """Reject older bundles before enabling this installation's hosted protocol."""
+    runtime = _regular_file(directory, Path("dist/player.js"), "SWOP relay requires a compatible dist/player.js release bundle")
     script = runtime.read_bytes()
-    if not re.search(rb"\bsessionToken\b", script) or b"Allowlist this Device ID" in script:
-        raise SystemExit("SWOP relay requires a player release with sessionToken support; older Device ID allowlist builds cannot be published")
+    if b"hosted-profile-v1" not in script or b"ottplay.swop.v2" not in script:
+        raise SystemExit("SWOP relay requires a player release with hosted-profile-v1 and encrypted Site Data pairing support")
+    for relative in REQUIRED_RUNTIME_ASSETS:
+        path = _regular_file(directory, relative, "Hosted runtime asset " + relative.as_posix())
+        if not path.stat().st_size:
+            raise SystemExit("Hosted runtime asset must not be empty: " + relative.as_posix())
 
 
 def stage_swop(directory, source):
-    """Copy both repository-owned files from a static/ root into a verified bundle."""
+    """Stage repository-owned config and load it before the upstream bootstrap."""
     directory, source = Path(directory), Path(source)
     verify_swop(source)
-    for relative in (CONFIG_PATH, Path(".herenow")):
+    for relative in (CONFIG_PATH, HOSTED_PATH, Path(".herenow")):
         target = directory / relative
         if target.exists() or target.is_symlink():
             raise SystemExit("Player archive conflicts with the repository-owned SWOP configuration")
     local = directory / "local"
     if directory.is_symlink() or local.is_symlink() or (local.exists() and not local.is_dir()):
         raise SystemExit("Player archive has an unsafe SWOP configuration directory")
-    for relative in (CONFIG_PATH, PROXY_PATH):
+    index = _regular_file(directory, Path("index.html"), "Hosted bootstrap")
+    document = index.read_text()
+    head = re.search(r"<head(?:\s[^>]*)?>", document, re.IGNORECASE)
+    if not head or "local/hosted.js" in document or "__OTTPLAY_HOSTED__" in document:
+        raise SystemExit("Hosted bootstrap requires an unmodified HTML head")
+    document = document[:head.end()] + "\n        " + BOOTSTRAP_TAG + document[head.end():]
+    for relative in (CONFIG_PATH, HOSTED_PATH, PROXY_PATH, DATA_PATH):
         target = directory / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / relative, target)
+    index.write_text(document)
     verify_swop(directory)
 
 

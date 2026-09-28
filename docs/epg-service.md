@@ -1,16 +1,49 @@
-# M3U programme guide
+# M3U programme guide on here.now
 
-The browser M3U driver sends channel names to `POST /m3u/match-channels`, then
-loads `GET /epg/<hash>.json`. A static host without these routes serves its SPA
-HTML instead, leaving every channel without a programme on browsers and TVs.
+The hosted profile removes the EPG server dependency. `local/hosted.js` selects
+`https://cdn.epg.one/epg2.xml.gz`, `/hosted/epg-worker.js` and a two-hour refresh.
+The player downloads and parses XMLTV in a Web Worker, matches the current M3U
+channels using the shared matching logic and retains the required programmes.
+A validated cache in IndexedDB supports subsequent opens and refresh failures.
+No scheduled CI job, k3s service or operator-managed Cloudflare Worker is needed
+to refresh this profile. External XMLTV and IPTV content providers remain inputs.
 
-`static/.herenow/proxy.json` forwards matching, programme JSON, logo matching and
-generated SVG logos to `https://epg.2560801.xyz`. Matching permits 600 requests
-per hour per IP; programme and logo reads permit 7200. Include this manifest
-with every publication. The existing staging and publication validator checks
-all routes and refuses missing routes, changed upstreams and broad M3U proxies.
+The full feed is intentionally used: the smaller public feed was observed with
+no current РЕН ТВ programme, and tested per-channel endpoints were unavailable.
+Desktop proof of the full-feed algorithm does not establish LG performance.
+Use the actual supported TV/browser builds for cold-start and cache validation.
 
-## Backend and ownership
+## Acceptance
+
+Validate РЕН ТВ HD against the current time after a cold load and a warm reload.
+Check channel matching, archive selection, a changed playlist, and continued UI
+responsiveness while a feed refresh and video playback overlap. Test a failed,
+truncated or empty feed without destroying a usable previous cache. Confirm
+request logs contain no calls to `epg.2560801.xyz`, `/m3u/match-channels`,
+`/m3u/match-logos`, legacy `/epg/<hash>.json`, or the retired SVG endpoint.
+
+Browser storage availability and actual LG memory/startup time are release
+criteria. The compressed full feed is tens of MB; avoid constructing a full XML
+DOM or expanded XML string. Small same-origin Range proxy chunks remain a
+separate optimization until their headers, integrity and TV behavior are tested.
+The old `scripts/check-epg.py` tests the former server API only and is not an
+acceptance check for the client profile.
+
+## Retire the dedicated backend after cutover
+
+1. Publish and verify the compatible frontend, first-load profile, Worker assets,
+   demo media, MSX, encrypted Site Data pairing and VPortal.
+2. Confirm no live player request reaches the previous EPG hostname.
+3. Delete only the resources owned by `deploy/epg/ottplay-epg.yaml` in
+   `k3s-heaven`: the EPG Deployment/Service and its dedicated NetworkPolicy.
+4. Remove the dedicated `epg.2560801.xyz` DNS and h7 ingress entries through
+   `4alvit/terraform-cloudflare-alvit`; preserve all other h7 services.
+5. Verify the public player again and record the deployment/version used.
+
+The following manifest and image information is historical rollback evidence,
+not an instruction to deploy a backend for the new hosted profile.
+
+## Historical backend and ownership
 
 `deploy/epg/ottplay-epg.yaml` owns a single Kubernetes Deployment and ClusterIP
 Service in `synology-apps` on the `mp` node of `k3s-heaven`.
@@ -51,24 +84,3 @@ and the h7 tunnel route to `http://ottplay-epg.synology-apps.svc.cluster.local:8
 Its anchored path allowlist exposes only matching, programme JSON and generated
 logos. Other paths return 404, including `/m3u/cp.php`, VPortal and debug APIs.
 No playlist credentials or stream URLs are needed to populate this cache.
-
-## Deployment and verification
-
-```sh
-kubectl --context k3s-heaven apply -f deploy/epg/ottplay-epg.yaml
-kubectl --context k3s-heaven -n synology-apps rollout status deployment/ottplay-epg
-python3 scripts/check-epg.py https://epg.2560801.xyz
-python3 scripts/check-epg.py https://player.ottplay.here.now
-```
-
-The smoke check submits only the public name РЕН ТВ HD and verifies programme
-JSON contains a current programme. Test the origin first, then publish the
-manifest with the complete preserved site or a reviewed stable distribution.
-Reload the browser/TV playlist so it retries matching after the old HTML response.
-Also confirm blocked origin paths return 404 and that demo, MSX, SWOP and VPortal
-publication controls remain present. A successful static upload alone does not
-prove the proxy manifest was accepted.
-
-For rollback, restore the prior here.now version and revert the dedicated DNS,
-tunnel entries and Kubernetes manifest. Removing these routes restores the old
-missing-EPG behavior; it must not alter unrelated tunnel routes or player files.
