@@ -11,6 +11,26 @@ PROXY_PATH = Path(".herenow/proxy.json")
 EXPECTED_CONFIG = {"swopBaseUrl": "/swop"}
 EXPECTED_PROXY = {
     "proxies": {
+        "/m3u/match-channels": {
+            "upstream": "https://epg.2560801.xyz/m3u/match-channels",
+            "method": "POST",
+            "rateLimit": "600/hour/ip",
+        },
+        "/m3u/match-logos": {
+            "upstream": "https://epg.2560801.xyz/m3u/match-logos",
+            "method": "POST",
+            "rateLimit": "600/hour/ip",
+        },
+        "/epg/*": {
+            "upstream": "https://epg.2560801.xyz/epg/",
+            "method": "GET",
+            "rateLimit": "7200/hour/ip",
+        },
+        "/logo/*": {
+            "upstream": "https://epg.2560801.xyz/logo/",
+            "method": "GET",
+            "rateLimit": "7200/hour/ip",
+        },
         "/vportal/api": {
             "upstream": "https://swop.2560801.xyz/vportal/api",
             "method": "POST",

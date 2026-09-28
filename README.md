@@ -38,8 +38,9 @@ approved ottplay-foss stable release  →  verify and unpack ottplay-foss-dist.t
 ## Limits (static host)
 
 - **No** `ottplay-server` / HLS proxy / command-queue on here.now.
-- Playlists and EPG must be **public HTTPS** endpoints the browser can reach (CORS permitting).
-- The SWOP text-entry relay is available on the same origin; other Mode A companion APIs are not hosted on this URL.
+- Playlists and video streams must be endpoints the browser can reach (HTTPS and CORS permitting).
+- Same-origin routes provide M3U EPG, SWOP text entry and the configured VPortal catalog.
+  M3U programme data comes from the separately deployed [EPG service](docs/epg-service.md).
 
 ## Shared demo media
 
@@ -89,6 +90,11 @@ publishing; a static player bundle alone cannot load a browser VPortal catalog.
 Portal subscription keys remain in the user's player settings and request body;
 they must never be copied into this repository or the proxy manifest. The relay
 does not proxy video streams or transcode media.
+
+M3U channel matching, programme JSON and generated logos use the same proxy
+manifest. These routes point to the dedicated `epg.2560801.xyz` service and are
+validated on every publication, so a stable update cannot drop them. The
+[EPG runbook](docs/epg-service.md) covers deployment and a live РЕН ТВ HD check.
 
 ### Publish a reviewed stable release
 
