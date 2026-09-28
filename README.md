@@ -120,13 +120,14 @@ remain required.
 
 1. Configure `HERENOW_API_KEY` in the protected production environment with access to the `ottplay` workspace. Review the workspace and site slug configured in the workflow.
 2. Run **Actions → Publish here.now → Run workflow** from the default branch with an exact stable `vX.Y.Z` tag from `open-ott-play/ottplay-foss`.
-3. Review the deployment and approve its production environment. The workflow verifies the stable archive against its RC manifest, source revision and successful validation run before publishing.
+3. Supply `manifest_sha256` from the independently verified, accepted RC manifest receipt. That acceptance must verify the manifest against the immutable GitHub Actions `release-evidence` artifact and its ZIP digest. Do not calculate this input from the current mutable stable download.
+4. Check that the deployment run title contains the exact stable tag and full accepted manifest SHA-256, then approve its production environment. The workflow compares the downloaded manifest bytes with that digest before downloading the web archive, and verifies the archive, source revision and latest successful validation attempt before publishing. It uses public release downloads without requiring a cross-repository Actions artifact token.
 
 Release events and `repository_dispatch` do not publish the site. See the [operator runbook](docs/release-workflow.md) for the repository validation and deployment boundary.
 
 ### Prepare verified artifacts locally
 
-In a fresh checkout with no existing `dist/`, run `python3 scripts/prepare-dist.py vX.Y.Z` for the selected stable player release. This verifies and stages the distribution without publishing. Inspect `dist/`; use the protected workflow above to update the live site.
+In a fresh checkout with no existing `dist/`, run `python3 scripts/prepare-dist.py vX.Y.Z "$ACCEPTED_MANIFEST_SHA256"` for the selected stable player release, using the digest from the immutable-verified accepted RC receipt described above. This verifies and stages the distribution without publishing. Inspect `dist/`; use the protected workflow above to update the live site.
 
 Discover the Site slug (owner API key):
 

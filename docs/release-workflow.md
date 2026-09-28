@@ -30,9 +30,20 @@ playback and production deployment are separate checks.
 
 This repository publishes an existing stable OttPlay FOSS web bundle; it does not
 build application beta or RC packages. Run `publish-herenow.yml` manually from the
-default branch with an exact stable `vX.Y.Z` player tag and approve the protected
-`production` environment. The workflow checks release metadata, the source run,
-Release gate and distribution SHA-256 before extraction. Configure the production
+default branch with an exact stable `vX.Y.Z` player tag and `manifest_sha256` from
+the independently accepted RC manifest receipt. Acceptance must have matched that
+manifest byte for byte to the immutable GitHub Actions `release-evidence` ZIP and
+verified the ZIP digest. Do not derive this input from a fresh mutable stable
+download. Verify the run title's exact tag and full digest before approving the
+protected `production` environment.
+
+The workflow checks the raw manifest against the accepted digest before fetching
+the distribution, then verifies release metadata, the source run's latest
+successful attempt, Release gate and distribution SHA-256 before extraction.
+It rechecks the source run before staging. A legitimate RC retry is supported;
+the manifest must identify its current successful attempt. The publishing job
+does not download cross-repository Actions artifacts or need another token.
+Configure the production
 publishing credentials described in the [README](../README.md#secrets--never-commit).
 
 Preparation also verifies the repository-owned `static/demo/` against
@@ -44,7 +55,7 @@ An upstream archive containing `/demo/` fails preparation and requires an
 explicit reconciliation. See [demo media maintenance](demo-media.md).
 
 Release events and `repository_dispatch` do not publish the site. In a fresh
-checkout, `python3 scripts/prepare-dist.py vX.Y.Z` verifies and stages the selected
+checkout, `python3 scripts/prepare-dist.py vX.Y.Z "$ACCEPTED_MANIFEST_SHA256"` verifies and stages the selected
 bundle in `dist/` without publishing.
 
 The publisher is pinned to
