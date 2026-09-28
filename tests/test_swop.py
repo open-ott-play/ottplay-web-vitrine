@@ -157,7 +157,7 @@ class SwopPublicationTests(unittest.TestCase):
         self.runtime()
         verify_swop_runtime(self.target)
 
-    def test_missing_worker_or_companion_stops_publication(self):
+    def test_missing_worker_dependency_or_companion_stops_publication(self):
         self.runtime()
         for relative in SWOP["REQUIRED_RUNTIME_ASSETS"]:
             path = self.target / relative
@@ -180,7 +180,8 @@ class SwopPublicationTests(unittest.TestCase):
 
     def test_runtime_assets_reject_symlinks(self):
         self.runtime()
-        for relative in ("dist/player.js", "dist", "hosted/epg-worker.js", "swop-input"):
+        for relative in ("dist/player.js", "dist", "hosted/epg-worker.js", "hosted/pako-inflate.js",
+                         "hosted/sax.js", "js/runtime-polyfills.js", "js/ottplay-core.js", "js", "swop-input"):
             path = self.target / relative
             original = path.with_name(path.name + ".original")
             path.rename(original)

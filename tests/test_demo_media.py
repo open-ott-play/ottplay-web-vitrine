@@ -24,7 +24,9 @@ class DemoMediaTests(unittest.TestCase):
         (self.site / "index.html").write_text('<!doctype html><html><head><script src="/local/hosted.js"></script><title>player</title></head></html>')
         (self.site / "dist").mkdir()
         (self.site / "dist/player.js").write_text('window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2";')
-        for relative in ("hosted/epg-worker.js", "swop-input/index.html", "swop-input/app.js"):
+        for relative in ("hosted/epg-worker.js", "hosted/pako-inflate.js", "hosted/sax.js",
+                         "js/runtime-polyfills.js", "js/ottplay-core.js",
+                         "swop-input/index.html", "swop-input/app.js"):
             asset = self.site / relative
             asset.parent.mkdir(parents=True, exist_ok=True)
             asset.write_text("runtime-fixture")

@@ -59,6 +59,10 @@ HOSTED_SCRIPT = "window.__OTTPLAY_HOSTED__ = " + json.dumps(HOSTED_CONFIG, inden
 BOOTSTRAP_TAG = '<script src="/local/hosted.js"></script>'
 REQUIRED_RUNTIME_ASSETS = (
     Path("hosted/epg-worker.js"),
+    Path("hosted/pako-inflate.js"),
+    Path("hosted/sax.js"),
+    Path("js/runtime-polyfills.js"),
+    Path("js/ottplay-core.js"),
     Path("swop-input/index.html"),
     Path("swop-input/app.js"),
 )
