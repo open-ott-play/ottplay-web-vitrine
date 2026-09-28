@@ -65,6 +65,25 @@ class SwopPublicationTests(unittest.TestCase):
             with self.subTest(fields=list(value)), self.assertRaisesRegex(SystemExit, "SWOP public configuration"):
                 verify_swop(self.source)
 
+    def test_epg_routes_are_required_and_cannot_expose_the_stream_proxy(self):
+        path = self.source / ".herenow/proxy.json"
+        original = json.loads(path.read_text())
+        for route in ("/m3u/match-channels", "/m3u/match-logos", "/epg/*", "/logo/*"):
+            missing = copy.deepcopy(original)
+            del missing["proxies"][route]
+            redirected = copy.deepcopy(original)
+            redirected["proxies"][route]["upstream"] = "https://arbitrary.example/"
+            for value in (missing, redirected):
+                path.write_text(json.dumps(value))
+                with self.subTest(route=route), self.assertRaisesRegex(SystemExit, "SWOP proxy manifest"):
+                    verify_swop(self.source)
+        for route in ("/m3u/*", "/m3u/cp.php", "/*"):
+            broad = copy.deepcopy(original)
+            broad["proxies"][route] = {"upstream": "https://epg.2560801.xyz/", "method": "POST"}
+            path.write_text(json.dumps(broad))
+            with self.subTest(route=route), self.assertRaisesRegex(SystemExit, "SWOP proxy manifest"):
+                verify_swop(self.source)
+
     def test_vportal_route_is_required_and_cannot_become_an_open_proxy(self):
         path = self.source / ".herenow/proxy.json"
         original = json.loads(path.read_text())

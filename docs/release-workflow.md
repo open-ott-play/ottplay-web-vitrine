@@ -55,6 +55,9 @@ publisher revision.
 
 ## SWOP relay
 
+The same publication manifest also owns the [M3U EPG routes](epg-service.md).
+Run its РЕН ТВ HD smoke check after publication; an HTML 200 response is a failure.
+
 Choose a stable player release that implements the installation relay's
 `sessionToken` protocol. Older Device ID allowlist builds are incompatible even
 if their release checksums and provenance are valid. Preparation and direct
