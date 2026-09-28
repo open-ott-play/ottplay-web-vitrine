@@ -34,10 +34,12 @@ acceptance check for the client profile.
 1. Publish and verify the compatible frontend, first-load profile, Worker assets,
    demo media, MSX, encrypted Site Data pairing and VPortal.
 2. Confirm no live player request reaches the previous EPG hostname.
-3. Delete only the resources owned by `deploy/epg/ottplay-epg.yaml` in
-   `k3s-heaven`: the EPG Deployment/Service and its dedicated NetworkPolicy.
-4. Remove the dedicated `epg.2560801.xyz` DNS and h7 ingress entries through
+3. Follow [the retirement runbook](epg-retirement.md) to remove the dedicated
+   `epg.2560801.xyz` DNS and two h7 ingress entries through
    `4alvit/terraform-cloudflare-alvit`; preserve all other h7 services.
+4. Delete only the three Kubernetes resources named in that runbook:
+   `Deployment/ottplay-epg` and `Service/ottplay-epg` in `synology-apps`, plus
+   `NetworkPolicy/ottplay-epg-egress` in `cloudflared`, on `k3s-heaven`.
 5. Verify the public player again and record the deployment/version used.
 
 The following manifest and image information is historical rollback evidence,
@@ -45,9 +47,12 @@ not an instruction to deploy a backend for the new hosted profile.
 
 ## Historical backend and ownership
 
-`deploy/epg/ottplay-epg.yaml` owns a single Kubernetes Deployment and ClusterIP
-Service in `synology-apps` on the `mp` node of `k3s-heaven`.
-The manifest also owns a narrow, additive egress policy in `cloudflared`, allowing
+The removed `deploy/epg/ottplay-epg.yaml` manifest is retained in history at
+`d4bd1f53af81c781c57e6567239d3a28fd6869c4`; the
+[retirement runbook](epg-retirement.md#rollback-material) shows how to recover it.
+It owned a single Kubernetes Deployment and ClusterIP Service in `synology-apps`
+on the `mp` node of `k3s-heaven`.
+The manifest also owned a narrow, additive egress policy in `cloudflared`, allowing
 only the h7 connector pods to reach this service's pods on TCP 8080.
 The existing private registry contains
 the unmodified linux/amd64 OCI image from the stable `ottplay-foss` v1.1.43 asset:
