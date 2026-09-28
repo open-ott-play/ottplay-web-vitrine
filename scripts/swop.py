@@ -137,6 +137,12 @@ def bootstrap_tag(script):
 
 
 class _BootstrapParser(HTMLParser):
+    # Bootstrap validation assumes scripting is enabled. Tags inside HTML
+    # raw-text/RCDATA containers (including noscript) cannot execute scripts.
+    CDATA_CONTENT_ELEMENTS = HTMLParser.CDATA_CONTENT_ELEMENTS + (
+        "title", "textarea", "xmp", "iframe", "noembed", "noframes", "noscript",
+    )
+
     def __init__(self):
         super().__init__(convert_charrefs=False)
         self.scripts = []
@@ -150,7 +156,20 @@ class _BootstrapParser(HTMLParser):
 
     def handle_endtag(self, tag):
         if tag in self.parents:
-            self.parents = self.parents[:len(self.parents) - 1 - self.parents[::-1].index(tag)]
+            position = len(self.parents) - 1 - self.parents[::-1].index(tag)
+            # A template is an inert scope; </head> inside it cannot close the
+            # active document's head and make a subsequent inert script active.
+            if "template" not in self.parents[position + 1:]:
+                self.parents = self.parents[:position]
+
+    def handle_startendtag(self, tag, attrs):
+        # HTML ignores the slash on non-void elements: <template/> stays open.
+        # HTMLParser's default instead synthesizes an end tag, hiding inert
+        # containers from the ancestry check. Restore normal raw-text handling
+        # too, since HTMLParser skips that setup for its start-end callback.
+        self.handle_starttag(tag, attrs)
+        if tag in self.CDATA_CONTENT_ELEMENTS:
+            self.set_cdata_mode(tag)
 
 
 def _verify_bootstrap_document(document, tag):

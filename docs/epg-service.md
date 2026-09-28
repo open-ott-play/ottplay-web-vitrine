@@ -1,7 +1,8 @@
 # M3U programme guide on here.now
 
 The hosted profile removes the EPG server dependency. `local/hosted.js` selects
-`https://cdn.epg.one/epg2.xml.gz`, `/hosted/epg-worker.js` and a two-hour refresh.
+`https://cdn.epg.one/epg2.xml.gz`, the staged worker at
+`/hosted-runtime/<graph-sha>/hosted/epg-worker.js` and a two-hour refresh.
 The player downloads and parses XMLTV in a Web Worker, matches the current M3U
 channels using the shared matching logic and retains the required programmes.
 A validated cache in IndexedDB supports subsequent opens and refresh failures.

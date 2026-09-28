@@ -1,9 +1,14 @@
 name: Publish here.now
+run-name: 'Publish ${{ inputs.tag }} · ${{ inputs.manifest_sha256 }}'
 'on':
   workflow_dispatch:
     inputs:
       tag:
         description: Verified ottplay-foss stable tag vX.Y.Z
+        required: true
+        type: string
+      manifest_sha256:
+        description: SHA-256 from the independently immutable-verified accepted RC manifest receipt
         required: true
         type: string
 concurrency:
@@ -33,7 +38,8 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         RELEASE_TAG: ${{ inputs.tag }}
-      run: python3 scripts/prepare-dist.py "$RELEASE_TAG"
+        RELEASE_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+      run: python3 scripts/prepare-dist.py "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256"
     - name: Checkout pinned publishing dependency
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:

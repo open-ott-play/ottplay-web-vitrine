@@ -32,6 +32,19 @@ class PrepareDistributionTests(unittest.TestCase):
         self.gate = "success"
         self.archive = self.tar()
         self.checksum = None
+        self.attempt = 1
+        self.run_attempt = None
+        self.recheck_attempt = None
+        self.manifest_sha256 = None
+        self.api_calls = []
+        self.downloaded = []
+        self.run_reads = 0
+
+    def manifest(self):
+        return json.dumps({"repository": "open-ott-play/ottplay-foss", "version": "1.2.3", "channel": "rc",
+                           "source_sha": self.sha, "run_id": 42, "run_attempt": self.attempt, "assets": [
+                               {"name": "ottplay-foss-dist.tar.gz", "size": len(self.archive),
+                                "sha256": self.checksum or hashlib.sha256(self.archive).hexdigest()}]}).encode()
 
     def tar(self, name="index.html", symlink=False, demo=False,
             runtime=b'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2";'):
@@ -65,32 +78,36 @@ class PrepareDistributionTests(unittest.TestCase):
 
     def api(self, command):
         path = command[-1]
+        self.api_calls.append(path)
         if "/releases/tags/" in path:
             return json.dumps({"tag_name": self.tag, "draft": False, "prerelease": self.prerelease}).encode()
         if "/git/ref/tags/" in path:
             return json.dumps({"object": {"type": "commit", "sha": self.sha}}).encode()
         if "/jobs?" in path:
             return json.dumps([{"jobs": [{"name": "Release gate", "status": "completed", "conclusion": self.gate, "head_sha": self.sha}]}]).encode()
-        return json.dumps({"status": "completed", "conclusion": self.conclusion, "head_sha": self.sha,
-                           "run_attempt": 1, "path": ".github/workflows/release-pipeline.yml",
+        self.assertTrue(path.endswith("/actions/runs/42"), "Unexpected API request: " + path)
+        self.run_reads += 1
+        attempt = self.attempt if self.run_attempt is None else self.run_attempt
+        if self.run_reads > 1 and self.recheck_attempt is not None:
+            attempt = self.recheck_attempt
+        return json.dumps({"id": 42, "status": "completed", "conclusion": self.conclusion, "head_sha": self.sha,
+                           "run_attempt": attempt, "path": ".github/workflows/release-pipeline.yml",
                            "repository": {"full_name": "open-ott-play/ottplay-foss"}}).encode()
 
     def download(self, command, **kwargs):
         self.assertEqual(command[:3], ["gh", "release", "download"])
         directory = Path(command[command.index("--dir") + 1])
         name = command[command.index("--pattern") + 1]
+        self.downloaded.append(name)
         if name == "ottplay-foss-dist.tar.gz":
             (directory / name).write_bytes(self.archive)
         else:
-            manifest = {"repository": "open-ott-play/ottplay-foss", "version": "1.2.3", "channel": "rc",
-                        "source_sha": self.sha, "run_id": 42, "run_attempt": 1, "assets": [
-                            {"name": "ottplay-foss-dist.tar.gz", "size": len(self.archive),
-                             "sha256": self.checksum or hashlib.sha256(self.archive).hexdigest()}]}
-            (directory / name).write_text(json.dumps(manifest))
+            (directory / name).write_bytes(self.manifest())
         return subprocess.CompletedProcess(command, 0)
 
     def execute(self):
-        with patch.object(sys, "argv", [str(self.script), self.tag]), \
+        digest = self.manifest_sha256 if self.manifest_sha256 is not None else hashlib.sha256(self.manifest()).hexdigest()
+        with patch.object(sys, "argv", [str(self.script), self.tag, digest]), \
              patch.object(sys, "path", [str(self.script.parent), *sys.path]), \
              patch("subprocess.check_output", side_effect=self.api), \
              patch("subprocess.run", side_effect=self.download):
@@ -118,6 +135,45 @@ class PrepareDistributionTests(unittest.TestCase):
                          (self.root / "static/.herenow/proxy.json").read_bytes())
         self.assertEqual((self.root / "dist/.herenow/data.json").read_bytes(),
                          (self.root / "static/.herenow/data.json").read_bytes())
+
+    def test_retried_rc_uses_accepted_manifest_and_current_attempt(self):
+        self.attempt = 2
+        self.execute()
+        self.assertTrue((self.root / "dist/index.html").is_file())
+        self.assertTrue(any("/attempts/2/jobs?" in path for path in self.api_calls))
+        self.assertEqual(self.run_reads, 2)
+        self.assertFalse(any("/artifacts" in path for path in self.api_calls))
+
+    def test_replaced_manifest_and_archive_cannot_replace_accepted_bytes(self):
+        self.manifest_sha256 = hashlib.sha256(self.manifest()).hexdigest()
+        self.archive = self.tar(runtime=b'"hosted-profile-v1"; "ottplay.swop.v2"; /* replaced package */')
+        with self.assertRaisesRegex(SystemExit, "differs from the independently verified accepted RC manifest"):
+            self.execute()
+        self.assertEqual(self.downloaded, ["release-manifest.json"])
+        self.assertFalse((self.root / "dist").exists())
+
+    def test_digest_is_required_and_checked_before_network_access(self):
+        for value in ("", "0" * 63, "A" * 64, "0" * 65, "0" * 64 + ";id"):
+            self.manifest_sha256 = value
+            with self.subTest(value=value), self.assertRaisesRegex(SystemExit, "manifest SHA-256 is required"):
+                self.execute()
+            self.assertEqual(self.api_calls, [])
+            self.assertEqual(self.downloaded, [])
+        with patch.object(sys, "argv", [str(self.script), self.tag]), \
+             patch.object(sys, "path", [str(self.script.parent), *sys.path]), \
+             patch("subprocess.check_output") as api, patch("subprocess.run") as download, \
+             self.assertRaises(SystemExit):
+            runpy.run_path(str(self.script), run_name="__main__")
+        api.assert_not_called()
+        download.assert_not_called()
+
+    def test_stale_or_newly_retried_run_does_not_stage(self):
+        for first_attempt, recheck in ((2, None), (1, 2)):
+            self.run_attempt, self.recheck_attempt = first_attempt, recheck
+            self.run_reads = 0
+            with self.subTest(first=first_attempt, recheck=recheck), self.assertRaisesRegex(SystemExit, "RC validation run is not successful/current"):
+                self.execute()
+            self.assertFalse((self.root / "dist").exists())
 
     def test_publish_wrapper_rejects_a_shared_swop_device_identity(self):
         self.execute()
