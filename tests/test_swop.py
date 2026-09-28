@@ -252,6 +252,23 @@ class SwopPublicationTests(unittest.TestCase):
                 with self.subTest(wrapper=wrapper, ending=ending), self.assertRaisesRegex(SystemExit, "Hosted bootstrap"):
                     verify_swop(self.target)
 
+    def test_plaintext_cannot_hide_or_fake_an_active_bootstrap(self):
+        self.runtime()
+        stage_swop(self.target, self.source)
+        path = self.target / "index.html"
+        original = path.read_text()
+        tag = SWOP["bootstrap_tag"]((self.target / "local/hosted.js").read_text())
+        for ending in (">", "/>"):
+            for content in (tag + "</plaintext>",
+                            "</head><head>" + tag + "</plaintext>",
+                            "</plaintext>" + tag):
+                # Neither a slash nor an apparent end tag ends HTML plaintext.
+                path.write_text(original.replace(tag, "<plaintext" + ending + content))
+                with self.subTest(ending=ending, content=content), self.assertRaisesRegex(SystemExit, "Hosted bootstrap"):
+                    verify_swop(self.target)
+        path.write_text(original)
+        verify_swop(self.target)
+
     def test_dependency_only_change_invalidates_graph_profile_and_bootstrap(self):
         self.runtime()
         release = self.root / "release"
