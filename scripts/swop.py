@@ -1,4 +1,6 @@
 """Stage and verify the here.now profile without a separately operated backend."""
+import hashlib
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import re
@@ -57,12 +59,20 @@ EXPECTED_DATA = {
 }
 HOSTED_SCRIPT = "window.__OTTPLAY_HOSTED__ = " + json.dumps(HOSTED_CONFIG, indent=2) + ";\n"
 BOOTSTRAP_TAG = '<script src="/local/hosted.js"></script>'
-REQUIRED_RUNTIME_ASSETS = (
+GRAPH_PATH = Path("hosted-runtime")
+WORKER_IMPORTS = (
+    "../js/runtime-polyfills.js", "../js/ottplay-core.js", "pako-inflate.js", "sax.js",
+)
+WORKER_HEADER = ("importScripts(" + ", ".join(json.dumps(path) for path in WORKER_IMPORTS) + ");\n").encode()
+GRAPH_ASSETS = (
     Path("hosted/epg-worker.js"),
     Path("hosted/pako-inflate.js"),
     Path("hosted/sax.js"),
     Path("js/runtime-polyfills.js"),
     Path("js/ottplay-core.js"),
+)
+REQUIRED_RUNTIME_ASSETS = (
+    *GRAPH_ASSETS,
     Path("swop-input/index.html"),
     Path("swop-input/app.js"),
 )
@@ -97,15 +107,88 @@ def _read_json(directory, relative, label):
         raise SystemExit(f"{label} must contain valid JSON without duplicate keys") from None
 
 
-def verify_hosted_bootstrap(directory):
+def runtime_graph(directory):
+    """Hash the exact release bytes plus their fixed paths, without rewriting JS."""
+    contents = {}
+    digest = hashlib.sha256(b"ottplay-hosted-runtime-v1\0")
+    for relative in GRAPH_ASSETS:
+        data = _regular_file(directory, relative, "Hosted runtime asset " + relative.as_posix()).read_bytes()
+        if not data:
+            raise SystemExit("Hosted runtime asset must not be empty: " + relative.as_posix())
+        contents[relative] = data
+        digest.update(relative.as_posix().encode() + b"\0" + str(len(data)).encode() + b"\0" + data)
+    worker = contents[GRAPH_ASSETS[0]]
+    # The release builder emits this literal first statement. A changed loader
+    # needs review, not a best-effort guess about its relative dependencies.
+    if not worker.startswith(WORKER_HEADER) or b"importScripts" in worker[len(WORKER_HEADER):]:
+        raise SystemExit("Hosted worker import graph differs from the reviewed literal imports")
+    return digest.hexdigest(), contents
+
+
+def staged_hosted_script(graph):
+    config = json.loads(json.dumps(HOSTED_CONFIG))
+    config["epg"]["workerUrl"] = "/" + (GRAPH_PATH / graph / GRAPH_ASSETS[0]).as_posix()
+    return "window.__OTTPLAY_HOSTED__ = " + json.dumps(config, indent=2) + ";\n"
+
+
+def bootstrap_tag(script):
+    digest = hashlib.sha256(script.encode()).hexdigest()
+    return '<script src="/local/hosted.js?v=' + digest + '"></script>'
+
+
+class _BootstrapParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.scripts = []
+        self.parents = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "script":
+            self.scripts.append((self.get_starttag_text(), tuple(self.parents)))
+        if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}:
+            self.parents.append(tag)
+
+    def handle_endtag(self, tag):
+        if tag in self.parents:
+            self.parents = self.parents[:len(self.parents) - 1 - self.parents[::-1].index(tag)]
+
+
+def _verify_bootstrap_document(document, tag):
+    parser = _BootstrapParser()
+    parser.feed(document)
+    if (document.count("local/hosted.js") != 1 or not parser.scripts or
+            parser.scripts[0][0] != tag[:-9] or document.count(tag) != 1 or
+            parser.scripts[0][1] not in {("html", "head"), ("head",)}):
+        raise SystemExit("Hosted bootstrap must load the hashed local/hosted.js synchronously before all player scripts")
+
+
+def verify_hosted_bootstrap(directory, script):
     path = _regular_file(directory, Path("index.html"), "Hosted bootstrap")
-    document = path.read_text()
-    first_script = re.search(r"<script\b[^>]*>", document, re.IGNORECASE)
-    if document.count(BOOTSTRAP_TAG) != 1 or not first_script or first_script.group() != BOOTSTRAP_TAG[:-9]:
-        raise SystemExit("Hosted bootstrap must load local/hosted.js synchronously before all player scripts")
+    _verify_bootstrap_document(path.read_text(), bootstrap_tag(script))
 
 
-def verify_swop(directory):
+def verify_runtime_graph(directory, graph, contents):
+    root = Path(directory) / GRAPH_PATH
+    if root.is_symlink() or not root.is_dir():
+        raise SystemExit("Hosted runtime graph is missing or unsafe")
+    expected = set()
+    for relative, data in contents.items():
+        target = Path(graph) / relative
+        expected.add(target)
+        expected.update(parent for parent in target.parents if parent != Path("."))
+        path = _regular_file(directory, GRAPH_PATH / target, "Hosted runtime graph asset")
+        if path.read_bytes() != data:
+            raise SystemExit("Hosted runtime graph asset differs from the release bytes")
+    actual = set()
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise SystemExit("Hosted runtime graph must not contain symlinks")
+        actual.add(path.relative_to(root))
+    if actual != expected:
+        raise SystemExit("Hosted runtime graph contains unexpected files or directories")
+
+
+def verify_swop(directory, *, template=False):
     if _read_json(directory, CONFIG_PATH, "SWOP public configuration") != EXPECTED_CONFIG:
         raise SystemExit("SWOP public configuration must be empty; the hosted profile selects Site Data")
     if _read_json(directory, PROXY_PATH, "SWOP proxy manifest") != EXPECTED_PROXY:
@@ -113,12 +196,22 @@ def verify_swop(directory):
     if _read_json(directory, DATA_PATH, "SWOP Site Data manifest") != EXPECTED_DATA:
         raise SystemExit("SWOP Site Data manifest must match the reviewed encrypted pairing schema")
     hosted = _regular_file(directory, HOSTED_PATH, "Hosted public configuration")
-    if hosted.read_text() != HOSTED_SCRIPT:
+    if template:
+        script = HOSTED_SCRIPT
+        graph_path = Path(directory) / GRAPH_PATH
+        index = Path(directory) / "index.html"
+        if graph_path.exists() or graph_path.is_symlink() or index.exists() or index.is_symlink():
+            raise SystemExit("Hosted template must not contain a staged runtime graph or bootstrap")
+    else:
+        graph, contents = runtime_graph(directory)
+        verify_runtime_graph(directory, graph, contents)
+        script = staged_hosted_script(graph)
+    if hosted.read_bytes() != script.encode():
         raise SystemExit("Hosted public configuration must match the reviewed client EPG, SWOP and VPortal profile")
     if {path.name for path in (Path(directory) / ".herenow").iterdir()} != {"proxy.json", "data.json"}:
         raise SystemExit("SWOP proxy manifest directory contains unexpected publication controls")
-    if (Path(directory) / "index.html").exists():
-        verify_hosted_bootstrap(directory)
+    if not template:
+        verify_hosted_bootstrap(directory, script)
 
 
 def verify_swop_runtime(directory):
@@ -131,13 +224,14 @@ def verify_swop_runtime(directory):
         path = _regular_file(directory, relative, "Hosted runtime asset " + relative.as_posix())
         if not path.stat().st_size:
             raise SystemExit("Hosted runtime asset must not be empty: " + relative.as_posix())
+    runtime_graph(directory)
 
 
 def stage_swop(directory, source):
     """Stage repository-owned config and load it before the upstream bootstrap."""
     directory, source = Path(directory), Path(source)
-    verify_swop(source)
-    for relative in (CONFIG_PATH, HOSTED_PATH, Path(".herenow")):
+    verify_swop(source, template=True)
+    for relative in (CONFIG_PATH, HOSTED_PATH, Path(".herenow"), GRAPH_PATH):
         target = directory / relative
         if target.exists() or target.is_symlink():
             raise SystemExit("Player archive conflicts with the repository-owned SWOP configuration")
@@ -149,17 +243,26 @@ def stage_swop(directory, source):
     head = re.search(r"<head(?:\s[^>]*)?>", document, re.IGNORECASE)
     if not head or "local/hosted.js" in document or "__OTTPLAY_HOSTED__" in document:
         raise SystemExit("Hosted bootstrap requires an unmodified HTML head")
-    document = document[:head.end()] + "\n        " + BOOTSTRAP_TAG + document[head.end():]
-    for relative in (CONFIG_PATH, HOSTED_PATH, PROXY_PATH, DATA_PATH):
+    graph, contents = runtime_graph(directory)
+    script = staged_hosted_script(graph)
+    document = document[:head.end()] + "\n        " + bootstrap_tag(script) + document[head.end():]
+    _verify_bootstrap_document(document, bootstrap_tag(script))
+    for relative, data in contents.items():
+        target = directory / GRAPH_PATH / graph / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    for relative in (CONFIG_PATH, PROXY_PATH, DATA_PATH):
         target = directory / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / relative, target)
+    (directory / HOSTED_PATH).write_bytes(script.encode())
     index.write_text(document)
     verify_swop(directory)
 
 
 if __name__ == "__main__":
-    verify_swop(Path(sys.argv[1]))
-    if len(sys.argv) == 3 and sys.argv[2] == "--runtime":
+    runtime = len(sys.argv) == 3 and sys.argv[2] == "--runtime"
+    verify_swop(Path(sys.argv[1]), template=not runtime)
+    if runtime:
         verify_swop_runtime(Path(sys.argv[1]))
     print("SWOP endpoint configuration verified")

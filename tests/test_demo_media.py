@@ -12,6 +12,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 verify_demo = runpy.run_path(str(ROOT / "scripts/demo_media.py"))["verify_demo"]
+SWOP = runpy.run_path(str(ROOT / "scripts/swop.py"))
 
 
 class DemoMediaTests(unittest.TestCase):
@@ -21,7 +22,9 @@ class DemoMediaTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.site = self.root / "site"
         shutil.copytree(ROOT / "static", self.site)
-        (self.site / "index.html").write_text('<!doctype html><html><head><script src="/local/hosted.js"></script><title>player</title></head></html>')
+        for name in ("local", ".herenow"):
+            shutil.rmtree(self.site / name)
+        (self.site / "index.html").write_text('<!doctype html><html><head><title>player</title></head></html>')
         (self.site / "dist").mkdir()
         (self.site / "dist/player.js").write_text('window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2";')
         for relative in ("hosted/epg-worker.js", "hosted/pako-inflate.js", "hosted/sax.js",
@@ -29,7 +32,8 @@ class DemoMediaTests(unittest.TestCase):
                          "swop-input/index.html", "swop-input/app.js"):
             asset = self.site / relative
             asset.parent.mkdir(parents=True, exist_ok=True)
-            asset.write_text("runtime-fixture")
+            asset.write_bytes(SWOP["WORKER_HEADER"] + b"self.onmessage = function () {};\n" if relative == "hosted/epg-worker.js" else b"/* runtime-fixture */\n")
+        SWOP["stage_swop"](self.site, ROOT / "static")
         self.demo = self.site / "demo"
         self.manifest = self.root / "demo-media.json"
         shutil.copyfile(ROOT / "demo-media.json", self.manifest)
