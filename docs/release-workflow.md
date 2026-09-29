@@ -133,8 +133,11 @@ Before promotion, verify the emitted player against the configured bridge:
 - Discovery sends no existing command token, provider key or playlist URL and
   returns metadata only. Bridge failure leaves EPG, SWOP and playback available.
 - A discovered server creates a pending pairing request. Only explicit operator
-  approval with `ott pair approve` allows an individual device credential to be
+  approval with `ott approve NAME CODE` allows an individual device credential to be
   applied. Merely loading this Site or discovering an address grants no trust.
+- The trusted bridge returns only controllers matching its configured
+  `public_url`, including the exact HTTPS origin and base path. Reject unrelated
+  DNS-SD targets rather than trusting their own claim to be approved.
 - Existing control settings are preserved unless the user deliberately starts
   replacement pairing. Cancellation, expiry or changed settings cannot apply a
   stale approval. A credential from one device must not authorize another.
