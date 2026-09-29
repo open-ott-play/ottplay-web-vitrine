@@ -66,6 +66,11 @@ preserves every upstream header. here.now publicly documents routing, query
 forwarding and response streaming, not arbitrary compute or an EPG cache:
 [proxy documentation](https://here.now/docs#proxy-routes).
 
+Matching has an eight-second deadline including queue time. At most two requests
+are admitted, with one executing against the shared index. A disconnected request
+cancels its work; expiry returns `504 EPG_TIMEOUT` without partial mappings.
+The player preserves its saved guide and reports the timeout in diagnostics.
+
 `/epg/v1/health` is for Kubernetes readiness and stays outside the here.now
 public proxy manifest. In `EPG_ONLY=true` the dedicated process exposes only the
 new EPG API and health; legacy playlist, matching, SVG, proxy and debug routes
@@ -92,6 +97,8 @@ omitting it removes proxy routes. Inspect finalize warnings explicitly.
    overlap locally, not a Linux/musl refresh on `mp`, and excludes the retained
    production compressed buffer. Retain large-playlist match latency and
    failed-refresh evidence that a usable generation and its age are preserved.
+   The 2048-channel match check must finish within the player's 12-second request
+   timeout and return the expected mappings, including omitted unmatched channels.
 4. Prepare a compatible official frontend artifact, review the exact three-route
    proxy manifest and seven-asset graph, then validate a preview against the backend.
 5. Publish through the protected workflow only after preview acceptance; verify
