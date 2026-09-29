@@ -31,7 +31,7 @@ class SwopPublicationTests(unittest.TestCase):
         self.target.mkdir()
         (self.target / "index.html").write_text('<!doctype html><html><head><script src="/player-loader.js"></script></head></html>')
 
-    def runtime(self, script='window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2";'):
+    def runtime(self, script='window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1;'):
         runtime = self.target / "dist/player.js"
         runtime.parent.mkdir(exist_ok=True)
         runtime.write_text(script)
@@ -43,7 +43,11 @@ class SwopPublicationTests(unittest.TestCase):
 
     def profile(self, target=None):
         script = ((target or self.target) / "local/hosted.js").read_text()
-        return json.loads(script.removeprefix("window.__OTTPLAY_HOSTED__ = ").removesuffix(";\n"))
+        prefix = "window.__OTTPLAY_HOSTED__ = "
+        self.assertTrue(script.startswith(prefix))
+        config, end = json.JSONDecoder(object_pairs_hook=SWOP["_unique_object"]).raw_decode(script, len(prefix))
+        self.assertEqual(script[end:], ";\n" + SWOP["CONTROL_DISCOVERY_SCRIPT"])
+        return config
 
     def graph(self, target=None):
         target = target or self.target
@@ -69,6 +73,49 @@ class SwopPublicationTests(unittest.TestCase):
         for relative in SWOP["GRAPH_ASSETS"]:
             self.assertEqual((self.target / "hosted-runtime" / graph / relative).read_bytes(), original[relative])
         self.assertNotIn("2560801.xyz", (self.target / ".herenow/proxy.json").read_text())
+
+    def test_discovery_uses_exact_public_endpoint_and_only_changes_profile_hash(self):
+        endpoint = "https://www.2560801.xyz/ott-control/api/discovery"
+        assignment = 'window.__OTT_CONTROL_DISCOVERY_URL__ = "' + endpoint + '";\n'
+        self.assertEqual(SWOP["CONTROL_DISCOVERY_URL"], endpoint)
+        self.assertEqual(SWOP["CONTROL_DISCOVERY_SCRIPT"], assignment)
+        self.assertEqual(self.profile(self.source), SWOP["HOSTED_CONFIG"])
+        self.runtime()
+        old_graph, old_files = SWOP["runtime_graph"](self.target)
+        stage_swop(self.target, self.source)
+        self.assertEqual(SWOP["runtime_graph"](self.target), (old_graph, old_files))
+        script = (self.target / "local/hosted.js").read_text()
+        self.assertEqual(script.count(assignment), 1)
+        legacy_profile = script[:-len(assignment)]
+        expected_config = copy.deepcopy(SWOP["HOSTED_CONFIG"])
+        expected_config["epg"]["workerUrl"] = "/hosted-runtime/" + old_graph + "/hosted/epg-worker.js"
+        self.assertEqual(legacy_profile, "window.__OTTPLAY_HOSTED__ = " + json.dumps(expected_config, indent=2) + ";\n")
+        self.assertNotEqual(SWOP["bootstrap_tag"](script), SWOP["bootstrap_tag"](legacy_profile))
+        document = (self.target / "index.html").read_text()
+        self.assertIn(SWOP["bootstrap_tag"](script), document)
+        self.assertNotIn(SWOP["bootstrap_tag"](legacy_profile), document)
+        for relative, data in old_files.items():
+            self.assertEqual((self.graph() / relative).read_bytes(), data)
+
+    def test_discovery_assignment_tampering_is_rejected_in_template_and_stage(self):
+        self.runtime()
+        stage_swop(self.target, self.source)
+        assignment = SWOP["CONTROL_DISCOVERY_SCRIPT"]
+        for directory, template in ((self.source, True), (self.target, False)):
+            path = directory / "local/hosted.js"
+            original = path.read_text()
+            for changed in (original.replace(assignment, ""),
+                            original.replace("https://www.2560801.xyz/", "http://www.2560801.xyz/"),
+                            original.replace("https://www.2560801.xyz/", "https://attacker.example/"),
+                            original.replace("https://www.2560801.xyz/", "https://user:secret@www.2560801.xyz/"),
+                            original.replace("/api/discovery", "/api/discovery?token=unexpected"),
+                            original + assignment,
+                            original + "window.extra = true;\n"):
+                path.write_text(changed)
+                with self.subTest(template=template, changed=changed), self.assertRaisesRegex(SystemExit, "Hosted public configuration"):
+                    verify_swop(directory, template=template)
+            path.write_text(original)
+            verify_swop(directory, template=template)
 
     def test_rejects_leaked_credentials_and_changed_upstreams(self):
         path = self.source / ".herenow/proxy.json"
@@ -179,6 +226,22 @@ class SwopPublicationTests(unittest.TestCase):
                 verify_swop_runtime(self.target)
         self.runtime()
         verify_swop_runtime(self.target)
+
+    def test_control_discovery_requires_exact_version_one_capability(self):
+        existing = 'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2";'
+        for marker in ("", "window.__OTT_CONTROL_DISCOVERY_VERSION__=2;",
+                       "window.__OTT_CONTROL_DISCOVERY_VERSION__=10;",
+                       "window.__OTT_CONTROL_DISCOVERY_VERSION__=1+1;",
+                       'window.__OTT_CONTROL_DISCOVERY_VERSION__="1";',
+                       "other.window.__OTT_CONTROL_DISCOVERY_VERSION__=1;"):
+            self.runtime(existing + marker)
+            with self.subTest(marker=marker), self.assertRaisesRegex(SystemExit, "Hosted control discovery requires"):
+                verify_swop_runtime(self.target)
+        for marker in ("window.__OTT_CONTROL_DISCOVERY_VERSION__=1;",
+                       "window.__OTT_CONTROL_DISCOVERY_VERSION__ = 1;",
+                       "window.__OTT_CONTROL_DISCOVERY_VERSION__=1,window.next=true;"):
+            self.runtime(existing + marker)
+            verify_swop_runtime(self.target)
 
     def test_missing_worker_dependency_or_companion_stops_publication(self):
         self.runtime()

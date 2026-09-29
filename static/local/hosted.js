@@ -19,3 +19,4 @@ window.__OTTPLAY_HOSTED__ = {
     ]
   }
 };
+window.__OTT_CONTROL_DISCOVERY_URL__ = "https://www.2560801.xyz/ott-control/api/discovery";
