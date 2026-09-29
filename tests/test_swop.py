@@ -1,4 +1,4 @@
-"""Regression checks for here.now profile staging and backend-free routes."""
+"""Regression checks for here.now profile staging and fixed backend routes."""
 import copy
 import hashlib
 import json
@@ -31,7 +31,7 @@ class SwopPublicationTests(unittest.TestCase):
         self.target.mkdir()
         (self.target / "index.html").write_text('<!doctype html><html><head><script src="/player-loader.js"></script></head></html>')
 
-    def runtime(self, script='window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1;'):
+    def runtime(self, script='window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;'):
         runtime = self.target / "dist/player.js"
         runtime.parent.mkdir(exist_ok=True)
         runtime.write_text(script)
@@ -72,7 +72,13 @@ class SwopPublicationTests(unittest.TestCase):
         self.assertEqual(graph_files, {p.as_posix() for p in SWOP["GRAPH_ASSETS"]})
         for relative in SWOP["GRAPH_ASSETS"]:
             self.assertEqual((self.target / "hosted-runtime" / graph / relative).read_bytes(), original[relative])
-        self.assertNotIn("2560801.xyz", (self.target / ".herenow/proxy.json").read_text())
+        profile = self.profile()["epg"]
+        self.assertEqual((profile["mode"], profile["apiBase"], profile["sourceId"]),
+                         ("server", "/epg/v1", "epg-one"))
+        self.assertEqual(profile["serverWorkerUrl"], "/hosted-runtime/" + graph + "/hosted/epg-server.js")
+        self.assertEqual(profile["source"], "https://cdn.epg.one/epg2.xml.gz")
+        self.assertEqual(set(json.loads((self.target / ".herenow/proxy.json").read_text())["proxies"]),
+                         {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes"})
 
     def test_discovery_uses_exact_public_endpoint_and_only_changes_profile_hash(self):
         endpoint = "https://www.2560801.xyz/ott-control/api/discovery"
@@ -89,6 +95,7 @@ class SwopPublicationTests(unittest.TestCase):
         legacy_profile = script[:-len(assignment)]
         expected_config = copy.deepcopy(SWOP["HOSTED_CONFIG"])
         expected_config["epg"]["workerUrl"] = "/hosted-runtime/" + old_graph + "/hosted/epg-worker.js"
+        expected_config["epg"]["serverWorkerUrl"] = "/hosted-runtime/" + old_graph + "/hosted/epg-server.js"
         self.assertEqual(legacy_profile, "window.__OTTPLAY_HOSTED__ = " + json.dumps(expected_config, indent=2) + ";\n")
         self.assertNotEqual(SWOP["bootstrap_tag"](script), SWOP["bootstrap_tag"](legacy_profile))
         document = (self.target / "index.html").read_text()
@@ -133,16 +140,45 @@ class SwopPublicationTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "SWOP proxy manifest"):
                 verify_swop(self.source, template=True)
 
-    def test_removed_infrastructure_routes_cannot_reappear(self):
+    def test_legacy_and_wildcard_infrastructure_routes_cannot_reappear(self):
         path = self.source / ".herenow/proxy.json"
         original = json.loads(path.read_text())
         for route in ("/m3u/match-channels", "/m3u/match-logos", "/epg/*", "/logo/*",
-                      "/swop/session", "/swop/val", "/vportal/api", "/m3u/cp.php", "/*"):
+                      "/epg/v1/*", "/epg/v1/health", "/swop/session", "/swop/val",
+                      "/vportal/api", "/m3u/cp.php", "/*"):
             changed = copy.deepcopy(original)
             changed["proxies"][route] = {"upstream": "https://epg.2560801.xyz/", "method": "POST"}
             path.write_text(json.dumps(changed))
             with self.subTest(route=route), self.assertRaisesRegex(SystemExit, "SWOP proxy manifest"):
                 verify_swop(self.source, template=True)
+
+    def test_epg_routes_require_exact_upstreams_methods_and_limits(self):
+        path = self.source / ".herenow/proxy.json"
+        original = json.loads(path.read_text())
+        for route, method in (("/epg/v1/match", "GET"), ("/epg/v1/programmes", "POST")):
+            for field, value in (("method", method), ("upstream", "https://attacker.example/"),
+                                 ("upstream", "http://epg.2560801.xyz" + route),
+                                 ("upstream", "https://epg.2560801.xyz" + route + "?source=unreviewed"),
+                                 ("headers", {"Authorization": "Bearer must-not-publish"}),
+                                 ("rateLimit", "999999/hour/ip")):
+                changed = copy.deepcopy(original)
+                changed["proxies"][route][field] = value
+                path.write_text(json.dumps(changed))
+                with self.subTest(route=route, field=field, value=value), self.assertRaisesRegex(SystemExit, "SWOP proxy manifest"):
+                    verify_swop(self.source, template=True)
+
+    def test_server_profile_cannot_silently_select_a_client_feed_or_foreign_api(self):
+        path = self.source / "local/hosted.js"
+        original = path.read_text()
+        for key, value in (("mode", "client"), ("apiBase", "https://attacker.example/epg/v1"),
+                           ("sourceId", "arbitrary-feed"), ("serverWorkerUrl", "/hosted/epg-worker.js")):
+            changed = copy.deepcopy(SWOP["HOSTED_CONFIG"])
+            changed["epg"][key] = value
+            path.write_text("window.__OTTPLAY_HOSTED__ = " + json.dumps(changed, indent=2) + ";\n" + SWOP["CONTROL_DISCOVERY_SCRIPT"])
+            with self.subTest(key=key), self.assertRaisesRegex(SystemExit, "Hosted public configuration"):
+                verify_swop(self.source, template=True)
+        path.write_text(original)
+        verify_swop(self.source, template=True)
 
     def test_vportal_exact_route_cannot_become_open_proxy(self):
         path = self.source / ".herenow/proxy.json"
@@ -228,7 +264,7 @@ class SwopPublicationTests(unittest.TestCase):
         verify_swop_runtime(self.target)
 
     def test_control_discovery_requires_exact_version_one_capability(self):
-        existing = 'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2";'
+        existing = 'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;'
         for marker in ("", "window.__OTT_CONTROL_DISCOVERY_VERSION__=2;",
                        "window.__OTT_CONTROL_DISCOVERY_VERSION__=10;",
                        "window.__OTT_CONTROL_DISCOVERY_VERSION__=1+1;",
@@ -240,6 +276,23 @@ class SwopPublicationTests(unittest.TestCase):
         for marker in ("window.__OTT_CONTROL_DISCOVERY_VERSION__=1;",
                        "window.__OTT_CONTROL_DISCOVERY_VERSION__ = 1;",
                        "window.__OTT_CONTROL_DISCOVERY_VERSION__=1,window.next=true;"):
+            self.runtime(existing + marker)
+            verify_swop_runtime(self.target)
+
+    def test_server_epg_requires_exact_version_one_capability(self):
+        existing = ('window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; '
+                    'window.__OTT_CONTROL_DISCOVERY_VERSION__=1;')
+        for marker in ("", "window.__OTT_HOSTED_EPG_SERVER_VERSION__=2;",
+                       "window.__OTT_HOSTED_EPG_SERVER_VERSION__=10;",
+                       "window.__OTT_HOSTED_EPG_SERVER_VERSION__=1+1;",
+                       'window.__OTT_HOSTED_EPG_SERVER_VERSION__="1";',
+                       "other.window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;"):
+            self.runtime(existing + marker)
+            with self.subTest(marker=marker), self.assertRaisesRegex(SystemExit, "Hosted server EPG requires"):
+                verify_swop_runtime(self.target)
+        for marker in ("window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;",
+                       "window.__OTT_HOSTED_EPG_SERVER_VERSION__ = 1;",
+                       "window.__OTT_HOSTED_EPG_SERVER_VERSION__=1,window.next=true;"):
             self.runtime(existing + marker)
             verify_swop_runtime(self.target)
 
@@ -362,7 +415,7 @@ class SwopPublicationTests(unittest.TestCase):
                 with self.assertRaisesRegex(SystemExit, "Hosted bootstrap"):
                     verify_swop(target)
 
-    def test_worker_relative_imports_resolve_within_the_five_file_graph(self):
+    def test_worker_relative_imports_resolve_within_the_six_file_graph(self):
         self.runtime()
         stage_swop(self.target, self.source)
         worker_url = self.profile()["epg"]["workerUrl"]
@@ -376,6 +429,13 @@ class SwopPublicationTests(unittest.TestCase):
             relative = Path(resolved.removeprefix(prefix))
             self.assertIn(relative, SWOP["GRAPH_ASSETS"])
             self.assertEqual((self.target / resolved.lstrip("/")).read_bytes(), (self.target / relative).read_bytes())
+
+    def test_server_worker_cannot_load_mutable_imported_dependencies(self):
+        self.runtime()
+        (self.target / "hosted/epg-server.js").write_text('importScripts("/mutable-server-helper.js");')
+        with self.assertRaisesRegex(SystemExit, "server worker must be self-contained"):
+            stage_swop(self.target, self.source)
+        self.assertFalse((self.target / "hosted-runtime").exists())
 
     def test_unreviewed_worker_import_graph_is_rejected_before_staging(self):
         self.runtime()

@@ -26,8 +26,8 @@ class DemoMediaTests(unittest.TestCase):
             shutil.rmtree(self.site / name)
         (self.site / "index.html").write_text('<!doctype html><html><head><title>player</title></head></html>')
         (self.site / "dist").mkdir()
-        (self.site / "dist/player.js").write_text('window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1;')
-        for relative in ("hosted/epg-worker.js", "hosted/pako-inflate.js", "hosted/sax.js",
+        (self.site / "dist/player.js").write_text('window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;')
+        for relative in ("hosted/epg-worker.js", "hosted/epg-server.js", "hosted/pako-inflate.js", "hosted/sax.js",
                          "js/runtime-polyfills.js", "js/ottplay-core.js",
                          "swop-input/index.html", "swop-input/app.js"):
             asset = self.site / relative

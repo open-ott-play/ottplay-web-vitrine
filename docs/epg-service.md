@@ -1,92 +1,123 @@
-# M3U programme guide on here.now
+# Server-prepared M3U programme guide on here.now
 
-The hosted profile removes the EPG server dependency. `local/hosted.js` selects
-`https://cdn.epg.one/epg2.xml.gz`, the staged worker at
-`/hosted-runtime/<graph-sha>/hosted/epg-worker.js` and a two-hour refresh.
-The player downloads and parses XMLTV in a Web Worker, matches the current M3U
-channels using the shared matching logic and retains the required programmes.
-A validated cache in IndexedDB supports subsequent opens and refresh failures.
-No scheduled CI job, k3s service or operator-managed Cloudflare Worker is needed
-to refresh this profile. External XMLTV and IPTV content providers remain inputs.
+The reviewed hosted profile selects `mode: "server"`, `sourceId: "epg-one"` and
+same-origin `apiBase: "/epg/v1"`. A dedicated Rust EPG service downloads and
+indexes the public `https://cdn.epg.one/epg2.xml.gz` source once for all clients,
+refreshing every two hours. The LG no longer downloads or parses that full feed
+for the default public source. It receives channel mappings and only the guide
+window it needs. here.now serves the player and forwards two fixed API routes;
+it does not execute our Rust process or schedule XMLTV processing.
 
-The full feed is intentionally used: the smaller public feed was observed with
-no current РЕН ТВ programme, and tested per-channel endpoints were unavailable.
-Desktop proof of the full-feed algorithm does not establish LG performance.
-Use the actual supported TV/browser builds for cold-start and cache validation.
+The service is external infrastructure: `Deployment/ottplay-epg` and
+`Service/ottplay-epg` in `synology-apps` on `k3s-heaven`. Cloudflare's h7 tunnel
+connects `epg.2560801.xyz` to the service. DNS and tunnel ingress are owned by
+`4alvit/terraform-cloudflare-alvit`; publication of this repository alone does
+not provision them. The narrow `NetworkPolicy/ottplay-epg-egress` in
+`cloudflared` permits the connector to reach that service. SWOP remains here.now
+Site Data, VPortal retains its fixed provider proxy, and command discovery is a
+separate optional bridge. None of these routes forwards video through EPG.
+
+## Profile and publication boundary
+
+`local/hosted.js` sets `serverWorkerUrl` to the immutable
+`/hosted-runtime/<graph-sha>/hosted/epg-server.js`. The existing XMLTV worker,
+pako, SAX, polyfills and shared core stay in that same content-addressed graph.
+Preparation copies exact release bytes and hashes all six assets. A changed
+server worker therefore changes both the graph address and profile hash.
+The release must advertise `window.__OTT_HOSTED_EPG_SERVER_VERSION__ = 1`;
+older bundles are rejected before they can ignore server mode and silently
+resume the full-feed download.
+
+`source` and `workerUrl` remain in the profile for explicitly configured custom
+XMLTV feeds. A profile containing custom or mixed sources uses the local XMLTV
+worker as a whole, preserving source precedence; no private URL, playlist URL,
+stream URL, credential or request-selected upstream is sent to this server.
+A server error must not silently start downloading the public full XMLTV feed
+on the TV. Keep usable local programme data and show a bounded retry/error state.
+
+## Fixed routes and data contract
+
+- `POST /epg/v1/match` proxies only to
+  `https://epg.2560801.xyz/epg/v1/match`, with `1200/hour/ip`.
+- `GET /epg/v1/programmes` proxies only to
+  `https://epg.2560801.xyz/epg/v1/programmes`, with `7200/hour/ip`.
+
+These limits allow matching batches and guide navigation while bounding abuse;
+clients still coalesce duplicate requests and cache accepted results. There is
+no `/epg/*` wildcard and no arbitrary URL parameter. The JSON POST contains only
+`version: 1`, fixed `source: "epg-one"` and up to 2048 channel metadata entries
+(`id`, `tvgId`, `tvgName`, `name`). It contains no stream or playlist addresses.
+
+A match response binds mappings to an opaque `generation`, `fetchedAt` in Unix
+milliseconds, `refreshMs` and `stale`. Each mapping has `channelId`, `shift` in
+integer seconds and `logo`. Programme GET requires `channelId`, `shift`,
+`hours` and the accepted `generation`. Rows retain `time`, `time_to` in Unix
+seconds and `name`, `descr`, `icon`; the server has already applied the shift.
+`hours=0` requests 48 hours of history and 48 hours of future coverage. Positive
+hours select the archive window, bounded by the API to 8784.
+
+A generation mismatch returns `409 EPG_GENERATION`: rematch before requesting
+new rows. A cold service returns `503 EPG_NOT_READY` with `Retry-After: 5`;
+unknown channels return 404. Responses use `Cache-Control: no-store`; inspect
+actual proxy headers during acceptance rather than assuming that here.now
+preserves every upstream header. here.now publicly documents routing, query
+forwarding and response streaming, not arbitrary compute or an EPG cache:
+[proxy documentation](https://here.now/docs#proxy-routes).
+
+`/epg/v1/health` is for Kubernetes readiness and stays outside the here.now
+public proxy manifest. In `EPG_ONLY=true` the dedicated process exposes only the
+new EPG API and health; legacy playlist, matching, SVG, proxy and debug routes
+must remain inaccessible. Include `.herenow/proxy.json` on every publication:
+omitting it removes proxy routes. Inspect finalize warnings explicitly.
+
+## Deployment sequence
+
+1. Build and qualify a current official Rust server artifact with the bounded
+   EPG v1 API. Import the verified OCI bytes and deploy by immutable image digest.
+   Record release/source/image identity; never restore the historical v1.1.43 pin.
+2. Apply the reviewed dedicated Deployment, Service and connector policy, and
+   the exact DNS/ingress entries from the infrastructure repository. Wait for a
+   nonempty accepted generation and readiness. Do not publish a server-mode
+   player while this dependency is cold or unavailable.
+3. Check the backend's full-feed refresh cost and large-playlist match latency.
+   Confirm a failed refresh preserves a usable generation and reports its age.
+4. Prepare a compatible official frontend artifact, review the exact three-route
+   proxy manifest and six-asset graph, then validate a preview against the backend.
+5. Publish through the protected workflow only after preview acceptance; verify
+   the production runtime and an ordinary reload with a previously primed cache.
+
+The removed deployment manifest at
+`d4bd1f53af81c781c57e6567239d3a28fd6869c4:deploy/epg/ottplay-epg.yaml` is historical
+ownership evidence only. Its old image and readiness protocol are incompatible
+with this deployment contract. The previous [retirement runbook](epg-retirement.md)
+must not be executed while the server-mode profile is live.
 
 ## Acceptance
 
-Validate РЕН ТВ HD against the current time after a cold load and a warm reload.
-Check channel matching, archive selection, a changed playlist, and continued UI
-responsiveness while a feed refresh and video playback overlap. Test a failed,
-truncated or empty feed without destroying a usable previous cache. Confirm
-request logs contain no calls to `epg.2560801.xyz`, `/m3u/match-channels`,
-`/m3u/match-logos`, legacy `/epg/<hash>.json`, or the retired SVG endpoint.
+Run `python3 scripts/check-epg.py https://player.ottplay.here.now` after readiness.
+This names-only smoke check verifies generation binding, a current РЕН ТВ HD
+programme with description, and archive rows through the v1 proxy. It does not
+replace the following browser/TV acceptance:
 
-Browser storage availability and actual LG memory/startup time are release
-criteria. The compressed full feed is tens of MB; avoid constructing a full XML
-DOM or expanded XML string. Small same-origin Range proxy chunks remain a
-separate optimization until their headers, integrity and TV behavior are tested.
-The old `scripts/check-epg.py` tests the former server API only and is not an
-acceptance check for the client profile.
-
-## Retire the dedicated backend after cutover
-
-1. Publish and verify the compatible frontend, first-load profile, Worker assets,
-   demo media, MSX, encrypted Site Data pairing and VPortal.
-2. Confirm no live player request reaches the previous EPG hostname.
-3. Follow [the retirement runbook](epg-retirement.md) to remove the dedicated
-   `epg.2560801.xyz` DNS and two h7 ingress entries through
-   `4alvit/terraform-cloudflare-alvit`; preserve all other h7 services.
-4. Delete only the three Kubernetes resources named in that runbook:
-   `Deployment/ottplay-epg` and `Service/ottplay-epg` in `synology-apps`, plus
-   `NetworkPolicy/ottplay-epg-egress` in `cloudflared`, on `k3s-heaven`.
-5. Verify the public player again and record the deployment/version used.
-
-The following manifest and image information is historical rollback evidence,
-not an instruction to deploy a backend for the new hosted profile.
-
-## Historical backend and ownership
-
-The removed `deploy/epg/ottplay-epg.yaml` manifest is retained in history at
-`d4bd1f53af81c781c57e6567239d3a28fd6869c4`; the
-[retirement runbook](epg-retirement.md#rollback-material) shows how to recover it.
-It owned a single Kubernetes Deployment and ClusterIP Service in `synology-apps`
-on the `mp` node of `k3s-heaven`.
-The manifest also owned a narrow, additive egress policy in `cloudflared`, allowing
-only the h7 connector pods to reach this service's pods on TCP 8080.
-The existing private registry contains
-the unmodified linux/amd64 OCI image from the stable `ottplay-foss` v1.1.43 asset:
-
-- Release container archive SHA-256: `77146883063a9ff656c973ebaf862bbdce2a0a19bee35e2c5c7328116156848b`.
-- Image manifest SHA-256: `345f53b4cbb9c255dbdea65d65af8a74ff90095535478d8ba701918271976ae0`.
-- Source: `9eb64715c4630ef59235e4a97ac3b5a769ff041f`, release validation run `35743019208`.
-
-The source manifest, tag, successful Release gate, archive hash and individual
-OCI blob hashes were verified before import. Image promotion must retain the
-verified bytes; do not substitute a mutable registry tag. The pinned backend
-version is independent of the frontend version published to here.now.
-
-The v1.1.46 server was tested first, but its shared-runtime XMLTV processing
-was too slow for this workload: a single РЕН ТВ HD lookup took 33.76 seconds
-on the deployed node and repeatedly exceeded readiness timeouts. The v1.1.43
-server retains the compatible text/JSON protocol and native Rust parser.
-Before upgrading this backend pin, measure a full-feed cold start and a large
-playlist lookup; small parser unit tests alone do not establish usable latency.
-
-The service loads `https://cdn.epg.one/epg2.xml.gz` into memory and refreshes every
-two hours. This is the CDN destination of the default `epg.it999.ru` feed; using
-it directly over HTTPS avoids an unavailable intermediate HTTP redirect.
-One replica keeps channel matching and subsequent hash lookup on the
-same process. Restarting clears the in-memory channel registry; clients must
-reload their playlist afterward. `/health` confirms HTTP availability; readiness
-additionally waits for a real РЕН ТВ HD match so a cold server cannot serve empty
-matches. Memory
-headroom allows the old cache and a replacement feed to coexist during refresh.
-Run the programme smoke check before enabling routes.
-
-`4alvit/terraform-cloudflare-alvit` owns the proxied `epg.2560801.xyz` DNS record
-and the h7 tunnel route to `http://ottplay-epg.synology-apps.svc.cluster.local:8080`.
-Its anchored path allowlist exposes only matching, programme JSON and generated
-logos. Other paths return 404, including `/m3u/cp.php`, VPortal and debug APIs.
-No playlist credentials or stream URLs are needed to populate this cache.
+- For the default public source, capture requests with fresh browser storage:
+  match and programmes use only the two same-origin routes. **No browser request
+  to the public XMLTV feed, its redirects or the direct EPG server origin**, and
+  no full-feed download/parse worker starts. Measure first usable guide time on
+  LG separately from desktop; do not substitute desktop results for TV timing.
+- Verify РЕН ТВ HD identity, current title/description, ordered archive rows and
+  actual archive playback. Compare row fields and shifts against the accepted
+  source generation. Reopening EPG while data is loading must allow navigation
+  and Back; video playback must stay responsive.
+- Repeat with warm local data, channel changes and a changed playlist. Trigger
+  a generation change, cold503, timeout and failed refresh: bound retries,
+  rematch on409 and preserve useful local data. Never fall back automatically
+  to the public full-feed download when the server fails.
+- Explicit custom/mixed feeds must retain their local processing and ordering;
+  their URLs and credentials must never appear in server match/query requests.
+- Preserve all14 demo media files, both MSX files, encrypted SWOP pairing,
+  VPortal and optional control discovery. Verify old `/m3u/match-channels`,
+  `/m3u/match-logos`, `/epg/<hash>.json`, `/logo/*`, `/m3u/cp.php`, debug and
+  wildcard routes remain unavailable.
+- Inspect live owner file inventory, finalize warnings and proxy response
+  headers. Check an ordinary cached-tab reload loads the new entry/profile and
+  complete immutable worker graph without intercepting network requests.

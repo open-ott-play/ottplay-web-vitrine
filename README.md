@@ -39,8 +39,9 @@ accepted ottplay-foss release  →  verify and unpack ottplay-foss-dist.tar.gz
 
 - **No** `ottplay-server` / HLS proxy / command-queue on here.now.
 - Playlists and video streams must be endpoints the browser can reach (HTTPS and CORS permitting).
-- M3U EPG is downloaded from its public XMLTV provider and parsed in the client Web Worker.
-  The validated guide is cached on the device; see [EPG operation](docs/epg-service.md).
+- Default M3U EPG is prepared by our dedicated Rust service on k3s and fetched
+  through two fixed here.now routes. Explicit custom XMLTV sources remain local
+  to the device; see [EPG operation](docs/epg-service.md).
 - SWOP text entry uses encrypted pairing records in here.now Site Data. VPortal uses
   a fixed here.now proxy directly to the approved provider. These player features
   require no separately operated k3s service, private Cloudflare Worker or tunnel.
@@ -106,9 +107,10 @@ with the new profile or infer compatibility from a release tag alone.
 
 ### Hosted EPG and pairing assets
 
-The EPG worker and its four imported dependencies are copied byte for byte from
+The EPG server worker, XMLTV worker and its four imported dependencies are copied byte for byte from
 the verified release into `hosted-runtime/<graph-sha>/`, preserving their relative
-paths. The profile selects that worker URL, so a change to any dependency gives
+paths. The profile selects the server worker by default and retains the XMLTV
+worker for explicit custom sources, so a change to any dependency gives
 the entire worker graph a new address. A query on the worker alone would leave
 its `importScripts` dependencies cached under their old URLs. The original release
 files remain available; no release JavaScript is rewritten or rebuilt. Publication
@@ -125,23 +127,26 @@ reject tampered, expired, wrong-pair and already consumed messages. The record
 is deleted on completion or cancellation; deletion/quota behavior must be
 checked on here.now. See the [hosted acceptance checks](docs/release-workflow.md#hosted-profile).
 
-`static/.herenow/proxy.json` contains one exact `POST /vportal/provider-1`
-route to the already approved VPortal API. The hosted client sends the provider's
+`static/.herenow/proxy.json` contains exact `POST /epg/v1/match` and
+`GET /epg/v1/programmes` routes to the dedicated Rust EPG service, plus the
+existing exact `POST /vportal/provider-1` route to the approved VPortal API. The hosted client sends the provider's
 JSON body directly through that route. Unknown provider URLs fail locally;
 there is no request-supplied upstream or wildcard VPortal proxy. User subscription
 keys remain in their settings and POST body, never the checked-in profile or
 manifest. VPortal carries catalog JSON, not video streams. Include this manifest
 on every publication: omitted proxy manifests remove routes from the next version.
 
-The prior seven EPG/SWOP/VPortal routes to `*.2560801.xyz` are rejected by the
-publication validator. The former installation variable is no longer referenced.
-Retire the dedicated EPG resources only after validating the new profile on the
-public site and TV; the [EPG runbook](docs/epg-service.md) records that sequence.
+Legacy EPG/SWOP routes and wildcard proxies remain rejected by the publication
+validator. The new EPG API accepts channel metadata and a fixed source ID, never
+private feed URLs. The former installation variable is not referenced. The Rust
+EPG service, its readiness and immutable image pin must be accepted before the
+server-mode frontend is published; see the [EPG runbook](docs/epg-service.md).
 
 ### Publish a reviewed stable release
 
 Select a release with `hosted-profile-v1`, encrypted Site Data SWOP and the
-standalone EPG Worker and phone companion. Preparation and publication reject
+server EPG capability marker `__OTT_HOSTED_EPG_SERVER_VERSION__=1`, both EPG
+workers and phone companion. Preparation and publication reject
 older bundles or missing assets before they can replace the live player. The
 marker is a compatibility tripwire; release checks and browser/TV acceptance
 remain required.
