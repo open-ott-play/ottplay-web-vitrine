@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a checksum-verified stable player distribution; never publish it."""
+"""Prepare an independently accepted stable or explicit beta distribution; never publish."""
 import hashlib
 import json
 from pathlib import Path
@@ -12,14 +12,21 @@ import tempfile
 from demo_media import verify_demo
 from msx import stage_msx
 from swop import stage_swop, verify_swop_runtime
+from beta_release import BETA_TAG, BetaRelease, verify_run as verify_beta_run
 
 REPO = "open-ott-play/ottplay-foss"
-tag = sys.argv[1] if len(sys.argv) == 3 else ""
-manifest_sha256 = sys.argv[2] if len(sys.argv) == 3 else ""
-if not re.fullmatch(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", tag):
+tag = sys.argv[1] if len(sys.argv) in (3, 4) else ""
+manifest_sha256 = sys.argv[2] if len(sys.argv) in (3, 4) else ""
+channel = sys.argv[3] if len(sys.argv) == 4 else "stable"
+if channel not in ("stable", "beta"):
+    raise SystemExit("Deployment channel must be stable or beta")
+if channel == "beta" and not BETA_TAG.fullmatch(tag):
+    raise SystemExit("An explicit canonical vX.Y.Z-beta.N tag is required")
+if channel == "stable" and not re.fullmatch(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", tag):
     raise SystemExit("An explicit stable vX.Y.Z tag is required")
 if not re.fullmatch(r"[0-9a-f]{64}", manifest_sha256):
-    raise SystemExit("An independently verified accepted RC manifest SHA-256 is required")
+    raise SystemExit("An independently verified accepted " + ("beta" if channel == "beta" else "RC") +
+                     " manifest SHA-256 is required")
 
 
 def api(path):
@@ -35,12 +42,15 @@ def verify_source_run(run, run_id, attempt, source_sha):
     require(run.get("id") == run_id and run.get("status") == "completed" and run.get("conclusion") == "success" and
             run.get("head_sha") == source_sha and run.get("run_attempt") == attempt and
             run.get("path") == ".github/workflows/release-pipeline.yml" and
-            run.get("repository", {}).get("full_name") == REPO, "RC validation run is not successful/current")
+            run.get("repository", {}).get("full_name") == REPO,
+            ("Beta" if channel == "beta" else "RC") + " validation run is not successful/current")
+    if channel == "beta":
+        verify_beta_run(run, source_sha)
 
 
 release = api(f"releases/tags/{tag}")
-require(release.get("tag_name") == tag and release.get("draft") is False and release.get("prerelease") is False,
-        "Only published stable releases can be deployed")
+require(release.get("tag_name") == tag and release.get("draft") is False and
+        release.get("prerelease") is (channel == "beta"), "Release publication status differs from deployment channel")
 root = Path(__file__).resolve().parents[1]
 require(not (root / "dist").exists(), "dist already exists; use a fresh checkout for deployment")
 with tempfile.TemporaryDirectory(prefix="vitrine-release-") as temporary:
@@ -51,10 +61,13 @@ with tempfile.TemporaryDirectory(prefix="vitrine-release-") as temporary:
     require(manifest_path.stat().st_size <= 2_000_000, "Release manifest is too large")
     raw_manifest = manifest_path.read_bytes()
     require(hashlib.sha256(raw_manifest).hexdigest() == manifest_sha256,
-            "Stable manifest differs from the independently verified accepted RC manifest")
+            "Published manifest differs from the independently verified accepted RC manifest" if channel == "stable"
+            else "Published manifest differs from the independently verified accepted beta manifest")
     manifest = json.loads(raw_manifest)
-    require(manifest.get("repository") == REPO and manifest.get("version") == tag[1:] and manifest.get("channel") == "rc",
-            "Stable release must contain the unchanged verified RC manifest")
+    beta = BetaRelease(tag, manifest, raw_manifest, release, api) if channel == "beta" else None
+    if channel == "stable":
+        require(manifest.get("repository") == REPO and manifest.get("version") == tag[1:] and manifest.get("channel") == "rc",
+                "Stable release must contain the unchanged verified RC manifest")
     ref = api(f"git/ref/tags/{tag}")
     require(ref.get("object", {}).get("type") == "commit" and ref["object"].get("sha") == manifest.get("source_sha"),
             "Stable tag and manifest source SHA do not match")
@@ -87,6 +100,9 @@ with tempfile.TemporaryDirectory(prefix="vitrine-release-") as temporary:
     require(selected is not None, "Verified archive does not contain index.html")
     require(api(f"git/ref/tags/{tag}") == ref, "Stable source tag changed during verification")
     verify_source_run(api(f"actions/runs/{run_id}"), run_id, attempt, manifest["source_sha"])
+    if beta:
+        beta.verify_web(selected)
+        beta.recheck()
     verify_swop_runtime(selected)
     # here.now replaces the whole site; demo media is deliberately absent from
     # upstream application bundles and must be supplied by this repository.

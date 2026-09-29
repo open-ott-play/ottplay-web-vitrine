@@ -4,13 +4,21 @@ run-name: 'Publish ${{ inputs.tag }} · ${{ inputs.manifest_sha256 }}'
   workflow_dispatch:
     inputs:
       tag:
-        description: Verified ottplay-foss stable tag vX.Y.Z
+        description: Independently accepted stable vX.Y.Z or beta vX.Y.Z-beta.N tag
         required: true
         type: string
       manifest_sha256:
-        description: SHA-256 from the independently immutable-verified accepted RC manifest receipt
+        description: SHA-256 from the independently immutable-verified accepted release manifest receipt
         required: true
         type: string
+      release_channel:
+        description: Explicit deployment channel; beta requires independent qualification
+        required: true
+        type: choice
+        default: stable
+        options:
+        - stable
+        - beta
 concurrency:
   group: ottplay-web-vitrine-production
   cancel-in-progress: false
@@ -34,12 +42,13 @@ jobs:
       env:
         HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
       run: ': "${HERENOW_API_KEY:?Configure production environment credentials before publishing}"'
-    - name: Download and verify stable release bytes
+    - name: Download and verify accepted release bytes
       env:
         GH_TOKEN: ${{ github.token }}
         RELEASE_TAG: ${{ inputs.tag }}
         RELEASE_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
-      run: python3 scripts/prepare-dist.py "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256"
+        RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      run: python3 scripts/prepare-dist.py "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256" "$RELEASE_CHANNEL"
     - name: Checkout pinned publishing dependency
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
