@@ -22,8 +22,10 @@ separate optional bridge. None of these routes forwards video through EPG.
 `local/hosted.js` sets `serverWorkerUrl` to the immutable
 `/hosted-runtime/<graph-sha>/hosted/epg-server.js`. The existing XMLTV worker,
 pako, SAX, polyfills and shared core stay in that same content-addressed graph.
-Preparation copies exact release bytes and hashes all six assets. A changed
-server worker therefore changes both the graph address and profile hash.
+`diagnosticsUrl` selects its self-contained `hosted/epg-diagnostics.js` panel,
+loaded only when diagnostics are opened; it belongs to the same immutable graph.
+Preparation copies exact release bytes and hashes all seven assets. A changed
+server worker or diagnostics panel therefore changes both the graph address and profile hash.
 The release must advertise `window.__OTT_HOSTED_EPG_SERVER_VERSION__ = 1`;
 older bundles are rejected before they can ignore server mode and silently
 resume the full-feed download.
@@ -82,7 +84,7 @@ omitting it removes proxy routes. Inspect finalize warnings explicitly.
 3. Check the backend's full-feed refresh cost and large-playlist match latency.
    Confirm a failed refresh preserves a usable generation and reports its age.
 4. Prepare a compatible official frontend artifact, review the exact three-route
-   proxy manifest and six-asset graph, then validate a preview against the backend.
+   proxy manifest and seven-asset graph, then validate a preview against the backend.
 5. Publish through the protected workflow only after preview acceptance; verify
    the production runtime and an ordinary reload with a previously primed cache.
 
@@ -108,6 +110,9 @@ replace the following browser/TV acceptance:
   actual archive playback. Compare row fields and shifts against the accepted
   source generation. Reopening EPG while data is loading must allow navigation
   and Back; video playback must stay responsive.
+- Open diagnostics from the actual published asset, then verify Back and navigation
+  during loading, a failed load and reopening. Loading diagnostics must not block
+  guide requests or reopen a panel after its owner has left the screen.
 - Repeat with warm local data, channel changes and a changed playlist. Trigger
   a generation change, cold503, timeout and failed refresh: bound retries,
   rematch on409 and preserve useful local data. Never fall back automatically

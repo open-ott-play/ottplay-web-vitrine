@@ -63,7 +63,7 @@ class PrepareDistributionTests(unittest.TestCase):
                 entry = tarfile.TarInfo("dist/player.js")
                 entry.size = len(runtime)
                 archive.addfile(entry, io.BytesIO(runtime))
-                for name in ("hosted/epg-worker.js", "hosted/epg-server.js", "hosted/pako-inflate.js", "hosted/sax.js",
+                for name in ("hosted/epg-worker.js", "hosted/epg-server.js", "hosted/epg-diagnostics.js", "hosted/pako-inflate.js", "hosted/sax.js",
                              "js/runtime-polyfills.js", "js/ottplay-core.js",
                              "swop-input/index.html", "swop-input/app.js"):
                     entry = tarfile.TarInfo(name)

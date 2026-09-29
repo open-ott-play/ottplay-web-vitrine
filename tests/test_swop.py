@@ -76,6 +76,7 @@ class SwopPublicationTests(unittest.TestCase):
         self.assertEqual((profile["mode"], profile["apiBase"], profile["sourceId"]),
                          ("server", "/epg/v1", "epg-one"))
         self.assertEqual(profile["serverWorkerUrl"], "/hosted-runtime/" + graph + "/hosted/epg-server.js")
+        self.assertEqual(profile["diagnosticsUrl"], "/hosted-runtime/" + graph + "/hosted/epg-diagnostics.js")
         self.assertEqual(profile["source"], "https://cdn.epg.one/epg2.xml.gz")
         self.assertEqual(set(json.loads((self.target / ".herenow/proxy.json").read_text())["proxies"]),
                          {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes"})
@@ -96,6 +97,7 @@ class SwopPublicationTests(unittest.TestCase):
         expected_config = copy.deepcopy(SWOP["HOSTED_CONFIG"])
         expected_config["epg"]["workerUrl"] = "/hosted-runtime/" + old_graph + "/hosted/epg-worker.js"
         expected_config["epg"]["serverWorkerUrl"] = "/hosted-runtime/" + old_graph + "/hosted/epg-server.js"
+        expected_config["epg"]["diagnosticsUrl"] = "/hosted-runtime/" + old_graph + "/hosted/epg-diagnostics.js"
         self.assertEqual(legacy_profile, "window.__OTTPLAY_HOSTED__ = " + json.dumps(expected_config, indent=2) + ";\n")
         self.assertNotEqual(SWOP["bootstrap_tag"](script), SWOP["bootstrap_tag"](legacy_profile))
         document = (self.target / "index.html").read_text()
@@ -171,7 +173,9 @@ class SwopPublicationTests(unittest.TestCase):
         path = self.source / "local/hosted.js"
         original = path.read_text()
         for key, value in (("mode", "client"), ("apiBase", "https://attacker.example/epg/v1"),
-                           ("sourceId", "arbitrary-feed"), ("serverWorkerUrl", "/hosted/epg-worker.js")):
+                           ("sourceId", "arbitrary-feed"), ("serverWorkerUrl", "/hosted/epg-worker.js"),
+                           ("diagnosticsUrl", "https://attacker.example/diagnostics.js"),
+                           ("diagnosticsUrl", "/hosted/epg-worker.js")):
             changed = copy.deepcopy(SWOP["HOSTED_CONFIG"])
             changed["epg"][key] = value
             path.write_text("window.__OTTPLAY_HOSTED__ = " + json.dumps(changed, indent=2) + ";\n" + SWOP["CONTROL_DISCOVERY_SCRIPT"])
@@ -415,7 +419,7 @@ class SwopPublicationTests(unittest.TestCase):
                 with self.assertRaisesRegex(SystemExit, "Hosted bootstrap"):
                     verify_swop(target)
 
-    def test_worker_relative_imports_resolve_within_the_six_file_graph(self):
+    def test_worker_relative_imports_resolve_within_the_seven_file_graph(self):
         self.runtime()
         stage_swop(self.target, self.source)
         worker_url = self.profile()["epg"]["workerUrl"]
@@ -436,6 +440,17 @@ class SwopPublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "server worker must be self-contained"):
             stage_swop(self.target, self.source)
         self.assertFalse((self.target / "hosted-runtime").exists())
+
+    def test_diagnostics_ui_cannot_load_imported_dependencies(self):
+        self.runtime()
+        asset = self.target / "hosted/epg-diagnostics.js"
+        for value in ('importScripts("/mutable.js");', 'require("./helper");',
+                      'import("./helper.js");', 'import helper from "./helper.js";',
+                      'export { helper };'):
+            asset.write_text(value)
+            with self.subTest(value=value), self.assertRaisesRegex(SystemExit, "diagnostics UI must be self-contained"):
+                stage_swop(self.target, self.source)
+            self.assertFalse((self.target / "hosted-runtime").exists())
 
     def test_unreviewed_worker_import_graph_is_rejected_before_staging(self):
         self.runtime()

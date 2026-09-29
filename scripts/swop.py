@@ -30,6 +30,7 @@ HOSTED_CONFIG = {
         "apiBase": "/epg/v1",
         "sourceId": "epg-one",
         "serverWorkerUrl": "/hosted/epg-server.js",
+        "diagnosticsUrl": "/hosted/epg-diagnostics.js",
         "source": "https://cdn.epg.one/epg2.xml.gz",
         "workerUrl": "/hosted/epg-worker.js",
         "refreshMs": 7200000,
@@ -96,6 +97,7 @@ GRAPH_ASSETS = (
     Path("js/runtime-polyfills.js"),
     Path("js/ottplay-core.js"),
     Path("hosted/epg-server.js"),
+    Path("hosted/epg-diagnostics.js"),
 )
 REQUIRED_RUNTIME_ASSETS = (
     *GRAPH_ASSETS,
@@ -150,6 +152,9 @@ def runtime_graph(directory):
         raise SystemExit("Hosted worker import graph differs from the reviewed literal imports")
     if b"importScripts" in contents[Path("hosted/epg-server.js")]:
         raise SystemExit("Hosted server worker must be self-contained without imported dependencies")
+    diagnostics = contents[Path("hosted/epg-diagnostics.js")]
+    if re.search(rb"\b(?:importScripts\b|require\s*\(|import\s*[\"\'({*]|import\s+[A-Za-z_$]|export\s)", diagnostics):
+        raise SystemExit("Hosted diagnostics UI must be self-contained without imported dependencies")
     return digest.hexdigest(), contents
 
 
@@ -157,6 +162,7 @@ def staged_hosted_script(graph):
     config = json.loads(json.dumps(HOSTED_CONFIG))
     config["epg"]["workerUrl"] = "/" + (GRAPH_PATH / graph / GRAPH_ASSETS[0]).as_posix()
     config["epg"]["serverWorkerUrl"] = "/" + (GRAPH_PATH / graph / "hosted/epg-server.js").as_posix()
+    config["epg"]["diagnosticsUrl"] = "/" + (GRAPH_PATH / graph / "hosted/epg-diagnostics.js").as_posix()
     return "window.__OTTPLAY_HOSTED__ = " + json.dumps(config, indent=2) + ";\n" + CONTROL_DISCOVERY_SCRIPT
 
 

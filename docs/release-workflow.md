@@ -111,7 +111,7 @@ publisher revision.
 A compatible upstream bundle contains the `hosted-profile-v1` and
 `ottplay.swop.v2` runtime markers, the exact numeric
 `window.__OTT_HOSTED_EPG_SERVER_VERSION__=1` capability, plus
-`hosted/epg-server.js`, `hosted/epg-worker.js`,
+`hosted/epg-server.js`, `hosted/epg-worker.js`, `hosted/epg-diagnostics.js`,
 `swop-input/index.html`, and `swop-input/app.js`. Preparation and direct
 publication reject missing files and older runtimes, even when their release
 checksums are valid. These tripwires complement runtime acceptance tests.
@@ -124,8 +124,10 @@ async or delayed configuration could select a legacy server transport. Archives
 containing their own conflicting profile or publication controls fail preparation.
 
 The derived server profile selects `hosted-runtime/<graph-sha>/hosted/epg-server.js`
-and retains the XMLTV worker URL for explicit custom feeds.
-Preparation copies both exact workers, pako, SAX, runtime polyfills and shared core
+and retains the XMLTV worker URL for explicit custom feeds. Its `diagnosticsUrl`
+selects the self-contained diagnostics panel under that same immutable graph;
+the entry bundle loads this optional UI only when requested.
+Preparation copies both exact workers, the diagnostics panel, pako, SAX, runtime polyfills and shared core
 from the verified release into that directory, preserving their relative import
 paths. The graph hash binds every path and exact file bytes; the profile hash then
 binds its selected graph. Validation recomputes both and rejects altered files,
@@ -173,7 +175,7 @@ Require an accepted upstream candidate with
 `window.__OTT_CONTROL_DISCOVERY_VERSION__ = 1`, in addition to the existing hosted
 and SWOP markers. The marker is a compatibility tripwire, not a substitute for
 testing the emitted player. Keep the profile synchronous and include the entire
-script in its content hash; the six-file EPG graph remains derived exclusively
+script in its content hash; the seven-file EPG graph remains derived exclusively
 from the accepted upstream bytes.
 
 Before promotion, verify the emitted player against the configured bridge:
