@@ -1,4 +1,4 @@
-"""Stage and verify the here.now profile without a separately operated backend."""
+"""Stage and verify the reviewed here.now deployment profile."""
 import hashlib
 from html.parser import HTMLParser
 import json
@@ -14,6 +14,11 @@ PROXY_PATH = Path(".herenow/proxy.json")
 DATA_PATH = Path(".herenow/data.json")
 EXPECTED_CONFIG = {}
 PROVIDER_URL = "http://cd3c21307c36.vportalu.net/api/v1/"
+CONTROL_DISCOVERY_URL = "https://www.2560801.xyz/ott-control/api/discovery"
+CONTROL_DISCOVERY_SCRIPT = "window.__OTT_CONTROL_DISCOVERY_URL__ = " + json.dumps(CONTROL_DISCOVERY_URL) + ";\n"
+CONTROL_DISCOVERY_CAPABILITY = re.compile(
+    rb"(?<![A-Za-z0-9_$.])window\.__OTT_CONTROL_DISCOVERY_VERSION__\s*=\s*1(?=\s*(?:[;,}]|$))"
+)
 HOSTED_CONFIG = {
     "version": 1,
     "epg": {
@@ -57,7 +62,7 @@ EXPECTED_DATA = {
         },
     },
 }
-HOSTED_SCRIPT = "window.__OTTPLAY_HOSTED__ = " + json.dumps(HOSTED_CONFIG, indent=2) + ";\n"
+HOSTED_SCRIPT = "window.__OTTPLAY_HOSTED__ = " + json.dumps(HOSTED_CONFIG, indent=2) + ";\n" + CONTROL_DISCOVERY_SCRIPT
 BOOTSTRAP_TAG = '<script src="/local/hosted.js"></script>'
 GRAPH_PATH = Path("hosted-runtime")
 WORKER_IMPORTS = (
@@ -128,7 +133,7 @@ def runtime_graph(directory):
 def staged_hosted_script(graph):
     config = json.loads(json.dumps(HOSTED_CONFIG))
     config["epg"]["workerUrl"] = "/" + (GRAPH_PATH / graph / GRAPH_ASSETS[0]).as_posix()
-    return "window.__OTTPLAY_HOSTED__ = " + json.dumps(config, indent=2) + ";\n"
+    return "window.__OTTPLAY_HOSTED__ = " + json.dumps(config, indent=2) + ";\n" + CONTROL_DISCOVERY_SCRIPT
 
 
 def bootstrap_tag(script):
@@ -230,7 +235,7 @@ def verify_swop(directory, *, template=False):
         verify_runtime_graph(directory, graph, contents)
         script = staged_hosted_script(graph)
     if hosted.read_bytes() != script.encode():
-        raise SystemExit("Hosted public configuration must match the reviewed client EPG, SWOP and VPortal profile")
+        raise SystemExit("Hosted public configuration must match the reviewed client EPG, SWOP, VPortal and control discovery profile")
     if {path.name for path in (Path(directory) / ".herenow").iterdir()} != {"proxy.json", "data.json"}:
         raise SystemExit("SWOP proxy manifest directory contains unexpected publication controls")
     if not template:
@@ -243,6 +248,10 @@ def verify_swop_runtime(directory):
     script = runtime.read_bytes()
     if b"hosted-profile-v1" not in script or b"ottplay.swop.v2" not in script:
         raise SystemExit("SWOP relay requires a player release with hosted-profile-v1 and encrypted Site Data pairing support")
+    # Compatibility tripwire for a trusted, immutable release artifact. Actual
+    # execution and discovery behavior are checked by browser acceptance.
+    if not CONTROL_DISCOVERY_CAPABILITY.search(script):
+        raise SystemExit("Hosted control discovery requires a version 1 release capability marker")
     for relative in REQUIRED_RUNTIME_ASSETS:
         path = _regular_file(directory, relative, "Hosted runtime asset " + relative.as_posix())
         if not path.stat().st_size:

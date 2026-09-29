@@ -102,9 +102,57 @@ The profile selects:
 - SWOP QR/link pairing through here.now Site Data collection `swop_pairs`.
 - One fixed VPortal provider route at `POST /vportal/provider-1`.
 
-No installation credential or separately operated runtime is required. The
-validator rejects the retired routes to `epg.2560801.xyz` and `swop.2560801.xyz`,
+These EPG, SWOP and VPortal features require no installation credential or
+separately operated runtime. The optional home command-server bridge below has
+its own discovery and pairing boundary. The validator rejects the retired routes
+to `epg.2560801.xyz` and `swop.2560801.xyz`,
 additional proxy routes, embedded secrets, changed upstreams and changed schemas.
+
+## Home command-server discovery
+
+The public hosted script also sets `window.__OTT_CONTROL_DISCOVERY_URL__` to the
+exact deployment-specific URL `https://www.2560801.xyz/ott-control/api/discovery`.
+The bridge resolves DNS-SD on the configured home network and returns server
+metadata. It is separate from here.now Site Data and the VPortal proxy; neither
+manifest gains another route or collection. No device or installation credential
+belongs in this script or the discovery response.
+
+This deployment opts unconfigured clients into one startup discovery attempt.
+Generic clients without this profile have no personal home-network URL. Bridge
+failure must be nonblocking, and configured clients must preserve their settings.
+
+Require an accepted upstream candidate with
+`window.__OTT_CONTROL_DISCOVERY_VERSION__ = 1`, in addition to the existing hosted
+and SWOP markers. The marker is a compatibility tripwire, not a substitute for
+testing the emitted player. Keep the profile synchronous and include the entire
+script in its content hash; the five-file EPG graph remains derived exclusively
+from the accepted upstream bytes.
+
+Before promotion, verify the emitted player against the configured bridge:
+
+- Discovery sends no existing command token, provider key or playlist URL and
+  returns metadata only. Bridge failure leaves EPG, SWOP and playback available.
+- A discovered server creates a pending pairing request. Only explicit operator
+  approval with `ott pair approve` allows an individual device credential to be
+  applied. Merely loading this Site or discovering an address grants no trust.
+- Existing control settings are preserved unless the user deliberately starts
+  replacement pairing. Cancellation, expiry or changed settings cannot apply a
+  stale approval. A credential from one device must not authorize another.
+- Hosted-browser CORS and LG navigation work at the actual deployment origin.
+  Use a controlled test device and clean up its pending pairing and credential;
+  never exercise a real user's token in public acceptance logs.
+
+Retain the usual EPG, SWOP, demo, MSX and cache acceptance checks. Publishing the
+profile does not deploy the bridge or approve a pairing. Coordinate the new
+source candidate, bridge readiness and publisher revision before the official
+RC, stable and here.now delivery; do not republish an older stable to enable this
+feature ahead of its compatible source release.
+
+Keep core-feature regression checks isolated with saved, disabled control-server
+fixture settings, so startup discovery does not contact a live operator service.
+Do not weaken their retired-infrastructure guards or disable HTTP caching. Test
+automatic discovery separately with a fresh unconfigured client and an exact
+allowlist of the approved discovery and pairing routes, methods and origin.
 
 ## SWOP pairing
 

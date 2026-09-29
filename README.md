@@ -42,8 +42,10 @@ approved ottplay-foss stable release  →  verify and unpack ottplay-foss-dist.t
 - M3U EPG is downloaded from its public XMLTV provider and parsed in the client Web Worker.
   The validated guide is cached on the device; see [EPG operation](docs/epg-service.md).
 - SWOP text entry uses encrypted pairing records in here.now Site Data. VPortal uses
-  a fixed here.now proxy directly to the approved provider. No k3s service, private
-  Cloudflare Worker, tunnel, or installation token is part of this hosted profile.
+  a fixed here.now proxy directly to the approved provider. These player features
+  require no separately operated k3s service, private Cloudflare Worker or tunnel.
+- Optional home command-server discovery uses the deployment-specific HTTPS
+  bridge described below. It does not supply a command credential or grant control.
 
 ## Shared demo media
 
@@ -77,6 +79,32 @@ selects client EPG, here.now Site Data pairing and an exact VPortal provider
 route. `static/local/swop.json` is deliberately empty: this installation no
 longer selects the old Worker relay. Local and native player installations keep
 their separate transport configuration.
+
+### Home command-server discovery
+
+The same synchronous profile sets `window.__OTT_CONTROL_DISCOVERY_URL__` to
+`https://www.2560801.xyz/ott-control/api/discovery`. This public endpoint returns
+DNS-SD server metadata from the configured home network. A hosted browser cannot
+query that network's DNS directly; native and local-server clients use their own
+system DNS through their discovery implementation.
+
+With this deployment profile, a compatible player attempts discovery at startup
+when no command server is configured. Existing settings are preserved. A missing
+or unavailable bridge does not block the player; the user can retry discovery
+from command-server settings.
+
+Discovery is an optional control feature backed by the separately operated home
+bridge. Playback, EPG and SWOP do not depend on that bridge. Finding an address is
+not permission to control the player: pairing requires explicit approval with
+`ott pair approve` and issues an individual device credential. Existing command
+credentials, provider passwords and playlist URLs must not be sent to discovery
+or included in the public profile. See the [control discovery acceptance checks](docs/release-workflow.md#home-command-server-discovery).
+
+The publisher requires the upstream `window.__OTT_CONTROL_DISCOVERY_VERSION__ = 1`
+capability marker before enabling this profile. Do not deploy an older player
+with the new profile or infer compatibility from a release tag alone.
+
+### Hosted EPG and pairing assets
 
 The EPG worker and its four imported dependencies are copied byte for byte from
 the verified release into `hosted-runtime/<graph-sha>/`, preserving their relative

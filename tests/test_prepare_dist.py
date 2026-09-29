@@ -47,7 +47,7 @@ class PrepareDistributionTests(unittest.TestCase):
                                 "sha256": self.checksum or hashlib.sha256(self.archive).hexdigest()}]}).encode()
 
     def tar(self, name="index.html", symlink=False, demo=False,
-            runtime=b'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2";'):
+            runtime=b'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1;'):
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w:gz") as archive:
             entry = tarfile.TarInfo(name)
@@ -117,6 +117,7 @@ class PrepareDistributionTests(unittest.TestCase):
         self.execute()
         self.assertRegex((self.root / "dist/index.html").read_text(), r'<head>\n        <script src="/local/hosted\.js\?v=[0-9a-f]{64}"></script>')
         self.assertIn(b"hosted-profile-v1", (self.root / "dist/dist/player.js").read_bytes())
+        self.assertIn(b"window.__OTT_CONTROL_DISCOVERY_VERSION__=1;", (self.root / "dist/dist/player.js").read_bytes())
         self.assertFalse((self.root / "dist/player.js").exists())
         source = self.root / "static/demo"
         staged = self.root / "dist/demo"
@@ -135,6 +136,8 @@ class PrepareDistributionTests(unittest.TestCase):
                          (self.root / "static/.herenow/proxy.json").read_bytes())
         self.assertEqual((self.root / "dist/.herenow/data.json").read_bytes(),
                          (self.root / "static/.herenow/data.json").read_bytes())
+        self.assertTrue((self.root / "dist/local/hosted.js").read_text().endswith(
+            'window.__OTT_CONTROL_DISCOVERY_URL__ = "https://www.2560801.xyz/ott-control/api/discovery";\n'))
 
     def test_retried_rc_uses_accepted_manifest_and_current_attempt(self):
         self.attempt = 2
@@ -189,6 +192,14 @@ class PrepareDistributionTests(unittest.TestCase):
                         b'var sessionToken=""; alert("Allowlist this Device ID");'):
             self.archive = self.tar(runtime=runtime)
             with self.subTest(runtime=runtime), self.assertRaisesRegex(SystemExit, "SWOP relay requires"):
+                self.execute()
+            self.assertFalse((self.root / "dist").exists())
+
+    def test_missing_or_newer_discovery_capability_is_rejected_before_staging(self):
+        existing = b'"hosted-profile-v1"; "ottplay.swop.v2";'
+        for marker in (b"", b"window.__OTT_CONTROL_DISCOVERY_VERSION__=2;"):
+            self.archive = self.tar(runtime=existing + marker)
+            with self.subTest(marker=marker), self.assertRaisesRegex(SystemExit, "Hosted control discovery requires"):
                 self.execute()
             self.assertFalse((self.root / "dist").exists())
 
