@@ -9,7 +9,7 @@ window it needs. here.now serves the player and forwards two fixed API routes;
 it does not execute our Rust process or schedule XMLTV processing.
 
 The service is external infrastructure: `Deployment/ottplay-epg` and
-`Service/ottplay-epg` in `synology-apps` on `k3s-heaven`. Cloudflare's h7 tunnel
+`Service/ottplay-epg` in `synology-apps` on the ARM64 node `h7` in `k3s-heaven`. Cloudflare's h7 tunnel
 connects `epg.2560801.xyz` to the service. DNS and tunnel ingress are owned by
 `4alvit/terraform-cloudflare-alvit`; publication of this repository alone does
 not provision them. The narrow `NetworkPolicy/ottplay-epg-egress` in
@@ -85,7 +85,7 @@ omitting it removes proxy routes. Inspect finalize warnings explicitly.
    restore the historical v1.1.43 pin.
 2. Apply that manifest's dedicated Deployment, Service and connector policy,
    and the exact DNS/ingress entries from the infrastructure repository. Qualify
-   the actual official image natively on AMD64 node `mp` during its initial
+   the actual official ARM64 image on node `h7` during its initial
    download: accepted readiness and REN rows, exact image/container identity,
    responsive health, no restart/OOM/limit-pressure event, and authoritative
    cgroup peak below the 2 GiB limit; retain current memory and process RSS too.
@@ -94,7 +94,7 @@ omitting it removes proxy routes. Inspect finalize warnings explicitly.
    publish the server-mode player while the backend is cold or unavailable.
 3. Keep the optimized, source-matched local benchmark of retained old and new
    snapshots separate from official-image measurements. It measures refresh
-   overlap locally, not a Linux/musl refresh on `mp`, and excludes the retained
+   overlap locally, not a Linux/musl refresh on `h7`, and excludes the retained
    production compressed buffer. Retain large-playlist match latency and
    failed-refresh evidence that a usable generation and its age are preserved.
    The 2048-channel match check must finish within the player's 12-second request
@@ -110,6 +110,15 @@ accepted generation, unchanged container identity, continuous readiness/health
 and updated cgroup peak establish that refresh measurement. This follow-up is
 separate from initial deployment qualification; record it as pending until
 observed.
+
+The server writes bounded `phase=download`, `phase=decode`, `phase=parse` and
+`phase=index` lines to container logs, with elapsed milliseconds and public-feed
+byte/record counts. These separate source download and processing costs from
+client request latency. Read them with
+`kubectl --context k3s-heaven -n synology-apps logs deploy/ottplay-epg -c epg`.
+Refresh failures retain the accepted snapshot and emit a safe error line without
+raw provider data. Qualify placement as well as code: the same deployment limits
+do not imply comparable single-thread performance across cluster nodes.
 
 The removed deployment manifest at
 `d4bd1f53af81c781c57e6567239d3a28fd6869c4:deploy/epg/ottplay-epg.yaml` is historical
