@@ -75,18 +75,34 @@ omitting it removes proxy routes. Inspect finalize warnings explicitly.
 ## Deployment sequence
 
 1. Build and qualify a current official Rust server artifact with the bounded
-   EPG v1 API. Import the verified OCI bytes and deploy by immutable image digest.
-   Record release/source/image identity; never restore the historical v1.1.43 pin.
-2. Apply the reviewed dedicated Deployment, Service and connector policy, and
-   the exact DNS/ingress entries from the infrastructure repository. Wait for a
-   nonempty accepted generation and readiness. Do not publish a server-mode
-   player while this dependency is cold or unavailable.
-3. Check the backend's full-feed refresh cost and large-playlist match latency.
-   Confirm a failed refresh preserves a usable generation and reports its age.
+   EPG v1 API. Import the verified OCI bytes and pin their immutable image digest
+   in `deploy/epg/ottplay-epg.yaml`. Record release/source/image identity; never
+   restore the historical v1.1.43 pin.
+2. Apply that manifest's dedicated Deployment, Service and connector policy,
+   and the exact DNS/ingress entries from the infrastructure repository. Qualify
+   the actual official image natively on AMD64 node `mp` during its initial
+   download: accepted readiness and REN rows, exact image/container identity,
+   responsive health, no restart/OOM/limit-pressure event, and authoritative
+   cgroup peak below the 2 GiB limit; retain current memory and process RSS too.
+   Observe `/health` while readiness is cold503 where possible. A collector
+   started after readiness cannot establish cold-load responsiveness. Do not
+   publish the server-mode player while the backend is cold or unavailable.
+3. Keep the optimized, source-matched local benchmark of retained old and new
+   snapshots separate from official-image measurements. It measures refresh
+   overlap locally, not a Linux/musl refresh on `mp`, and excludes the retained
+   production compressed buffer. Retain large-playlist match latency and
+   failed-refresh evidence that a usable generation and its age are preserved.
 4. Prepare a compatible official frontend artifact, review the exact three-route
    proxy manifest and seven-asset graph, then validate a preview against the backend.
 5. Publish through the protected workflow only after preview acceptance; verify
    the production runtime and an ordinary reload with a previously primed cache.
+
+Optionally continue observing the same official container through its normal
+refresh, approximately two hours after the accepted `fetchedAt`. A second
+accepted generation, unchanged container identity, continuous readiness/health
+and updated cgroup peak establish that refresh measurement. This follow-up is
+separate from initial deployment qualification; record it as pending until
+observed.
 
 The removed deployment manifest at
 `d4bd1f53af81c781c57e6567239d3a28fd6869c4:deploy/epg/ottplay-epg.yaml` is historical

@@ -1,0 +1,115 @@
+# Render only after the current official linux/amd64 image has been qualified.
+# Immutable image bytes must match the retained official release receipt.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ottplay-epg
+  namespace: synology-apps
+spec:
+  replicas: 1
+  progressDeadlineSeconds: 1800
+  # Keep one accepted in-memory generation and avoid two refresh peaks on mp.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ottplay-epg
+  template:
+    metadata:
+      labels:
+        app: ottplay-epg
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: mp
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: epg
+          image: 192.168.167.25:5050/ottplay-epg@sha256:d18411a1a5e6f7393c6625d5f137346bcdfbd1655235d17eb6de762fab3e5e94
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: EPG_ONLY
+              value: "true"
+            - name: EPG_URLS
+              value: https://cdn.epg.one/epg2.xml.gz
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              # Qualify refresh with the accepted previous snapshot retained.
+              memory: 2Gi
+          # HTTP starts before download/parse. Startup/liveness deliberately
+          # check process health, never whether the external feed is ready.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /epg/v1/health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 2
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ottplay-epg
+  namespace: synology-apps
+spec:
+  selector:
+    app: ottplay-epg
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ottplay-epg-egress
+  namespace: cloudflared
+spec:
+  podSelector:
+    matchLabels:
+      app: cloudflared
+      tunnel: h7
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: synology-apps
+          podSelector:
+            matchLabels:
+              app: ottplay-epg
+      ports:
+        - protocol: TCP
+          port: 8080
