@@ -96,7 +96,7 @@ from command-server settings.
 Discovery is an optional control feature backed by the separately operated home
 bridge. Playback, EPG and SWOP do not depend on that bridge. Finding an address is
 not permission to control the player: pairing requires explicit approval with
-`ott pair approve` and issues an individual device credential. Existing command
+`ott approve NAME CODE` and issues an individual device credential. Existing command
 credentials, provider passwords and playlist URLs must not be sent to discovery
 or included in the public profile. See the [control discovery acceptance checks](docs/release-workflow.md#home-command-server-discovery).
 
