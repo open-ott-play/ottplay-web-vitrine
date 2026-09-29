@@ -18,7 +18,7 @@ Desktop / Cap / Tauri installs are great for daily use. This repo answers:
 
 > Can someone **try the full FOSS player in a browser** without cloning or paying for App Store / Play?
 
-Yes — publish the static frontend to a stable here.now workspace URL and explicitly approve updates from qualified stable player releases.
+Yes — publish the static frontend to a stable here.now workspace URL and explicitly approve updates from independently accepted stable or explicitly requested qualified beta releases.
 
 ## What it is
 
@@ -29,7 +29,7 @@ Yes — publish the static frontend to a stable here.now workspace URL and expli
 | ottplay-foss releases | Source of truth for the built web bundle |
 
 ```text
-approved ottplay-foss stable release  →  verify and unpack ottplay-foss-dist.tar.gz
+accepted ottplay-foss release  →  verify and unpack ottplay-foss-dist.tar.gz
                            →  add checksum-pinned static/demo/ media
                            →  here.now publish (workspace ottplay)
                            →  https://player.ottplay.here.now/
@@ -156,6 +156,19 @@ Release events and `repository_dispatch` do not publish the site. See the [opera
 ### Prepare verified artifacts locally
 
 In a fresh checkout with no existing `dist/`, run `python3 scripts/prepare-dist.py vX.Y.Z "$ACCEPTED_MANIFEST_SHA256"` for the selected stable player release, using the digest from the immutable-verified accepted RC receipt described above. This verifies and stages the distribution without publishing. Inspect `dist/`; use the protected workflow above to update the live site.
+
+### Publish an explicitly requested qualified beta
+
+Use the same protected workflow with `release_channel=beta`, an exact published
+`vX.Y.Z-beta.N` tag and the raw manifest SHA-256 from independent beta acceptance.
+That acceptance must authenticate the immutable Actions evidence ZIP and the
+published manifest/archive before preview/browser acceptance and production
+approval. Check the exact tag and full digest in the run title against the saved
+receipt. The default channel remains stable and mismatched channel/tag inputs
+fail closed. The beta path verifies the frozen plan, source policy, successful
+current `main` release run, complete API asset inventory and full beta build
+metadata, preserving the downloaded player bytes without RC/stable promotion or
+rebuild. See [the beta deployment contract](docs/release-workflow.md#explicit-qualified-beta-deployment).
 
 Discover the Site slug (owner API key):
 

@@ -21,7 +21,7 @@ class PrepareDistributionTests(unittest.TestCase):
         (self.root / "scripts").mkdir()
         self.script = self.root / "scripts/prepare-dist.py"
         source = Path(__file__).parents[1]
-        for name in ("prepare-dist.py", "demo_media.py", "msx.py", "swop.py"):
+        for name in ("prepare-dist.py", "beta_release.py", "demo_media.py", "msx.py", "swop.py"):
             shutil.copyfile(source / "scripts" / name, self.root / "scripts" / name)
         shutil.copytree(source / "static", self.root / "static")
         shutil.copyfile(source / "demo-media.json", self.root / "demo-media.json")

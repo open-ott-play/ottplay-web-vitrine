@@ -28,9 +28,10 @@ playback and production deployment are separate checks.
 
 ## Publishing the player
 
-This repository publishes an existing stable OttPlay FOSS web bundle; it does not
-build application beta or RC packages. Run `publish-herenow.yml` manually from the
-default branch with an exact stable `vX.Y.Z` player tag and `manifest_sha256` from
+This repository publishes an existing independently accepted OttPlay FOSS web
+bundle; it never builds application packages. For stable, run `publish-herenow.yml`
+manually from the default branch with `release_channel=stable`, an exact stable
+`vX.Y.Z` player tag and `manifest_sha256` from
 the independently accepted RC manifest receipt. Acceptance must have matched that
 manifest byte for byte to the immutable GitHub Actions `release-evidence` ZIP and
 verified the ZIP digest. Do not derive this input from a fresh mutable stable
@@ -57,6 +58,47 @@ explicit reconciliation. See [demo media maintenance](demo-media.md).
 Release events and `repository_dispatch` do not publish the site. In a fresh
 checkout, `python3 scripts/prepare-dist.py vX.Y.Z "$ACCEPTED_MANIFEST_SHA256"` verifies and stages the selected
 bundle in `dist/` without publishing.
+
+### Explicit qualified beta deployment
+
+When the requested delivery is beta plus site deployment, select
+`release_channel=beta` and the exact already-published `vX.Y.Z-beta.N` tag. This
+publishes that beta's existing bytes without creating an RC, stable tag or build.
+The default remains stable; each channel rejects tags from the other channel,
+and RC, nightly, alpha and noncanonical beta tags are rejected.
+
+Before dispatch, independent local acceptance must validate the actual source,
+current successful source run and attempt, exact frozen plan, source policy,
+published asset inventory, web archive and build metadata. It must also download
+the source run's unique immutable `release-evidence` Actions artifact, verify the
+API ZIP digest and prove its manifest bytes equal the published raw manifest.
+Use that accepted raw manifest SHA-256 as the workflow input, never a digest
+calculated only from a fresh mutable release download. Keep the accepted raw
+manifest, ZIP, web archive and receipts, and run preview/browser acceptance on the
+same staged package before approving production. The production reviewer must
+bind the exact beta tag and full digest in `Publish <tag> · <digest>` to those
+receipts. A successful beta build alone is not deployment acceptance.
+
+The protected job preserves this privilege boundary: it does not gain a
+cross-repository Actions artifact token or download the evidence ZIP itself.
+It checks the trusted digest before using the manifest, requires a published
+beta prerelease and matching canonical beta plan, and compares the embedded
+policy to the exact source Git blob. Qualification blockers must be empty.
+The source must be a successful `main` push or manual release-pipeline run in
+the upstream repository, with its current attempt and an explicit successful
+Release gate. The job verifies the complete public release-asset inventory,
+API digests and downloaded web SHA-256, and checks the full beta version,
+source revision and player digest in `build-info.json`. It rechecks the source
+run, tag, release and asset identities before staging. No version metadata or
+upstream JavaScript is rewritten. The usual demo, MSX, hosted-profile, runtime
+graph, Site Data and proxy guards still run.
+
+For a staging-only check in a fresh checkout, use
+`python3 scripts/prepare-dist.py "$ACCEPTED_BETA_TAG" "$ACCEPTED_BETA_MANIFEST_SHA256" beta`.
+The ordinary RC/stable acceptance helpers are intentionally insufficient for
+this path: their manifest and source-event rules differ. Use a separately
+reviewed beta acceptance/approval receipt; never forge a stable-promotion receipt
+or relabel beta evidence as RC evidence.
 
 The publisher is pinned to
 `heredotnow/skill@8cf033ed53b82c0c67b16359c8c431f99e111d04`. For local publishing,
