@@ -56,6 +56,8 @@ jobs:
         ref: 8cf033ed53b82c0c67b16359c8c431f99e111d04
         path: .ci-tools/herenow
         persist-credentials: false
+    - name: Verify dedicated EPG generation before cutover
+      run: python3 scripts/check-epg.py https://epg.2560801.xyz
     - name: Publish verified distribution
       env:
         HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}

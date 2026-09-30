@@ -109,7 +109,9 @@ publisher revision.
 ## Hosted profile
 
 A compatible upstream bundle contains the `hosted-profile-v1` and
-`ottplay.swop.v2` runtime markers plus `hosted/epg-worker.js`,
+`ottplay.swop.v2` runtime markers, the exact numeric
+`window.__OTT_HOSTED_EPG_SERVER_VERSION__=1` capability, plus
+`hosted/epg-server.js`, `hosted/epg-worker.js`, `hosted/epg-diagnostics.js`,
 `swop-input/index.html`, and `swop-input/app.js`. Preparation and direct
 publication reject missing files and older runtimes, even when their release
 checksums are valid. These tripwires complement runtime acceptance tests.
@@ -121,8 +123,11 @@ in `index.html`. Profile initialization must happen before any player code runs;
 async or delayed configuration could select a legacy server transport. Archives
 containing their own conflicting profile or publication controls fail preparation.
 
-The derived profile selects `hosted-runtime/<graph-sha>/hosted/epg-worker.js`.
-Preparation copies the exact worker, pako, SAX, runtime polyfills and shared core
+The derived server profile selects `hosted-runtime/<graph-sha>/hosted/epg-server.js`
+and retains the XMLTV worker URL for explicit custom feeds. Its `diagnosticsUrl`
+selects the self-contained diagnostics panel under that same immutable graph;
+the entry bundle loads this optional UI only when requested.
+Preparation copies both exact workers, the diagnostics panel, pako, SAX, runtime polyfills and shared core
 from the verified release into that directory, preserving their relative import
 paths. The graph hash binds every path and exact file bytes; the profile hash then
 binds its selected graph. Validation recomputes both and rejects altered files,
@@ -135,20 +140,23 @@ deployment, navigate normally and verify the newly selected profile and complete
 worker graph against the staged hashes. Do not use request interception for this
 check: it can disable the browser HTTP cache and conceal stale assets. Also verify
 the entry page is revalidated and that no service worker substitutes old files.
-The guarded runtime tests that block retired infrastructure remain a separate check.
+The runtime tests that block legacy routes and unwanted public XMLTV downloads
+remain a separate check.
 
 The profile selects:
 
-- Client XMLTV loading and parsing from `https://cdn.epg.one/epg2.xml.gz` in a
-  Web Worker, refreshing every two hours and caching the validated guide locally.
+- Server-prepared default EPG: `mode: "server"`, `sourceId: "epg-one"`,
+  `apiBase: "/epg/v1"`, using only exact match/programmes routes to the dedicated
+  Rust service. Explicit custom or mixed feed profiles retain local XMLTV processing.
 - SWOP QR/link pairing through here.now Site Data collection `swop_pairs`.
 - One fixed VPortal provider route at `POST /vportal/provider-1`.
 
-These EPG, SWOP and VPortal features require no installation credential or
-separately operated runtime. The optional home command-server bridge below has
-its own discovery and pairing boundary. The validator rejects the retired routes
-to `epg.2560801.xyz` and `swop.2560801.xyz`,
-additional proxy routes, embedded secrets, changed upstreams and changed schemas.
+These features need no installation credential in the public profile. EPG now
+depends on our dedicated k3s Rust service and Cloudflare tunnel; SWOP and VPortal
+retain their existing here.now transports. The optional home command-server bridge
+below has its own discovery and pairing boundary. The validator allows only two
+exact EPG v1 routes and the existing VPortal route, rejecting legacy or wildcard
+routes, embedded secrets, changed upstreams and changed schemas.
 
 ## Home command-server discovery
 
@@ -167,7 +175,7 @@ Require an accepted upstream candidate with
 `window.__OTT_CONTROL_DISCOVERY_VERSION__ = 1`, in addition to the existing hosted
 and SWOP markers. The marker is a compatibility tripwire, not a substitute for
 testing the emitted player. Keep the profile synchronous and include the entire
-script in its content hash; the five-file EPG graph remains derived exclusively
+script in its content hash; the seven-file EPG graph remains derived exclusively
 from the accepted upstream bytes.
 
 Before promotion, verify the emitted player against the configured bridge:
@@ -240,7 +248,7 @@ size/timeout/redirect enforcement; here.now's transparent proxy does not documen
 identical controls. Do not claim that the old Worker policy survives unchanged.
 Errors in the UI must not display request keys or upstream error bodies.
 
-## Publication acceptance and retirement
+## Publication acceptance
 
 Inspect finalize warnings for both manifests. A successful static upload alone
 does not prove proxy routes or Site Data were accepted. Preserve demo and MSX
@@ -248,9 +256,48 @@ files and verify the phone companion loads. Run browser EPG checks for РЕН Т
 (current programme and archive), repeat with a warm cache, and verify TV playback
 remains responsive during refresh. See [EPG acceptance](epg-service.md).
 
-Only after the new production runtime passes those checks remove the dedicated
-EPG Deployment, Service and NetworkPolicy and their DNS/tunnel entries. Do not
-remove unrelated services or the whole h7 tunnel. Retire the SWOP Worker only
-after confirming no other installations still use it; removing this site's
-routes already eliminates its dependency on that Worker. Keep a recorded prior
-here.now version and infrastructure manifests for a reviewed rollback.
+Default-source browser traffic must contain no public XMLTV downloads and no
+legacy EPG endpoints. Verify generation conflicts, cold readiness and stale-cache
+behavior. Keep the dedicated EPG Deployment, Service, NetworkPolicy and DNS/tunnel
+routes available while server mode is live. The previous retirement procedure is
+historical; do not execute it for this profile. Keep a recorded prior here.now
+version and exact infrastructure/image identities for a reviewed rollback.
+
+### Server EPG cutover using the next qualified beta
+
+The source PR must first be merged and its official beta release must contain
+both EPG workers and the numeric server capability marker. Do not synthesize a
+version or substitute a pre-merge local build. After independent artifact
+qualification, use a fresh publisher checkout at the reviewed merged revision:
+
+```sh
+python3 scripts/prepare-dist.py "$ACCEPTED_BETA_TAG" "$ACCEPTED_BETA_MANIFEST_SHA256" beta
+python3 scripts/swop.py ./dist --runtime
+python3 scripts/check-epg.py https://epg.2560801.xyz
+```
+
+These are staging/verification commands, not publication. They preserve release
+bytes and fail on an old frontend, wrong proxy routes, missing worker or cold
+backend. Preview publication must use that exact staged payload and accepted
+backend generation. Complete the [browser/TV acceptance](epg-service.md#acceptance)
+on the preview, including no default-source public XMLTV request and generation
+recovery, and record the preview inventory plus backend immutable image digest.
+Reconcile live owner file/version drift before the complete production replacement.
+
+Only then dispatch the existing protected workflow from the merged default
+branch, with the exact accepted tag and manifest digest:
+
+```sh
+gh workflow run publish-herenow.yml --repo open-ott-play/ottplay-web-vitrine --ref main \
+  -f tag="$ACCEPTED_BETA_TAG" \
+  -f manifest_sha256="$ACCEPTED_BETA_MANIFEST_SHA256" \
+  -f release_channel=beta
+```
+
+The job preserves all existing production approval and artifact checks. Immediately
+before publication it now runs `check-epg.py` against the fixed backend origin;
+a cold, empty or incompatible generation fails the job before the player changes.
+After deployment, run the same smoke check against
+`https://player.ottplay.here.now` and complete the captured-browser acceptance.
+The pre-cutover network check cannot prove here.now proxy behavior until the
+preview/production routes are tested. It also does not replace LG measurement.

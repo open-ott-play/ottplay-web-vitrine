@@ -1,4 +1,11 @@
-# Remove the dedicated EPG backend after the here.now cutover
+# Historical retirement of the dedicated EPG backend
+
+**Archived procedure: do not execute for the current server-mode profile.**
+The current hosted deployment again depends on the dedicated Rust EPG service.
+Use [the active EPG runbook](epg-service.md) for provisioning and acceptance.
+The deletion steps below record the prior client-only cutover and are only
+applicable after a separately reviewed replacement removes that dependency.
+
 
 This change removes the retired deployment manifest from the active source
 tree. It does not itself delete live Kubernetes or Cloudflare resources. Merge

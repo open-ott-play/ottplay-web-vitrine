@@ -1,1 +1,3 @@
-Copy proxy example only if you later add same-origin API routes; the player vitrine is static-only today.
+Published configuration is owned by static/.herenow and validated by scripts/swop.py.
+The hosted profile uses fixed EPG v1 and VPortal proxy routes plus encrypted SWOP
+Site Data. Preserve both manifests on every publish; see docs/epg-service.md.

@@ -14,14 +14,23 @@ PROXY_PATH = Path(".herenow/proxy.json")
 DATA_PATH = Path(".herenow/data.json")
 EXPECTED_CONFIG = {}
 PROVIDER_URL = "http://cd3c21307c36.vportalu.net/api/v1/"
+EPG_API_URL = "https://epg.2560801.xyz/epg/v1"
 CONTROL_DISCOVERY_URL = "https://www.2560801.xyz/ott-control/api/discovery"
 CONTROL_DISCOVERY_SCRIPT = "window.__OTT_CONTROL_DISCOVERY_URL__ = " + json.dumps(CONTROL_DISCOVERY_URL) + ";\n"
 CONTROL_DISCOVERY_CAPABILITY = re.compile(
     rb"(?<![A-Za-z0-9_$.])window\.__OTT_CONTROL_DISCOVERY_VERSION__\s*=\s*1(?=\s*(?:[;,}]|$))"
 )
+EPG_SERVER_CAPABILITY = re.compile(
+    rb"(?<![A-Za-z0-9_$.])window\.__OTT_HOSTED_EPG_SERVER_VERSION__\s*=\s*1(?=\s*(?:[;,}]|$))"
+)
 HOSTED_CONFIG = {
     "version": 1,
     "epg": {
+        "mode": "server",
+        "apiBase": "/epg/v1",
+        "sourceId": "epg-one",
+        "serverWorkerUrl": "/hosted/epg-server.js",
+        "diagnosticsUrl": "/hosted/epg-diagnostics.js",
         "source": "https://cdn.epg.one/epg2.xml.gz",
         "workerUrl": "/hosted/epg-worker.js",
         "refreshMs": 7200000,
@@ -35,6 +44,18 @@ HOSTED_CONFIG = {
 }
 EXPECTED_PROXY = {
     "proxies": {
+        "/epg/v1/match": {
+            "upstream": EPG_API_URL + "/match",
+            "method": "POST",
+            "headers": {"Content-Type": "application/json", "Accept": "application/json"},
+            "rateLimit": "1200/hour/ip",
+        },
+        "/epg/v1/programmes": {
+            "upstream": EPG_API_URL + "/programmes",
+            "method": "GET",
+            "headers": {"Accept": "application/json"},
+            "rateLimit": "7200/hour/ip",
+        },
         "/vportal/provider-1": {
             "upstream": PROVIDER_URL,
             "method": "POST",
@@ -75,6 +96,8 @@ GRAPH_ASSETS = (
     Path("hosted/sax.js"),
     Path("js/runtime-polyfills.js"),
     Path("js/ottplay-core.js"),
+    Path("hosted/epg-server.js"),
+    Path("hosted/epg-diagnostics.js"),
 )
 REQUIRED_RUNTIME_ASSETS = (
     *GRAPH_ASSETS,
@@ -127,12 +150,19 @@ def runtime_graph(directory):
     # needs review, not a best-effort guess about its relative dependencies.
     if not worker.startswith(WORKER_HEADER) or b"importScripts" in worker[len(WORKER_HEADER):]:
         raise SystemExit("Hosted worker import graph differs from the reviewed literal imports")
+    if b"importScripts" in contents[Path("hosted/epg-server.js")]:
+        raise SystemExit("Hosted server worker must be self-contained without imported dependencies")
+    diagnostics = contents[Path("hosted/epg-diagnostics.js")]
+    if re.search(rb"\b(?:importScripts\b|require\s*\(|import\s*[\"\'({*]|import\s+[A-Za-z_$]|export\s)", diagnostics):
+        raise SystemExit("Hosted diagnostics UI must be self-contained without imported dependencies")
     return digest.hexdigest(), contents
 
 
 def staged_hosted_script(graph):
     config = json.loads(json.dumps(HOSTED_CONFIG))
     config["epg"]["workerUrl"] = "/" + (GRAPH_PATH / graph / GRAPH_ASSETS[0]).as_posix()
+    config["epg"]["serverWorkerUrl"] = "/" + (GRAPH_PATH / graph / "hosted/epg-server.js").as_posix()
+    config["epg"]["diagnosticsUrl"] = "/" + (GRAPH_PATH / graph / "hosted/epg-diagnostics.js").as_posix()
     return "window.__OTTPLAY_HOSTED__ = " + json.dumps(config, indent=2) + ";\n" + CONTROL_DISCOVERY_SCRIPT
 
 
@@ -220,7 +250,7 @@ def verify_swop(directory, *, template=False):
     if _read_json(directory, CONFIG_PATH, "SWOP public configuration") != EXPECTED_CONFIG:
         raise SystemExit("SWOP public configuration must be empty; the hosted profile selects Site Data")
     if _read_json(directory, PROXY_PATH, "SWOP proxy manifest") != EXPECTED_PROXY:
-        raise SystemExit("SWOP proxy manifest must contain only the approved fixed VPortal route without credentials")
+        raise SystemExit("SWOP proxy manifest must contain only the approved exact EPG and VPortal routes without credentials")
     if _read_json(directory, DATA_PATH, "SWOP Site Data manifest") != EXPECTED_DATA:
         raise SystemExit("SWOP Site Data manifest must match the reviewed encrypted pairing schema")
     hosted = _regular_file(directory, HOSTED_PATH, "Hosted public configuration")
@@ -235,7 +265,7 @@ def verify_swop(directory, *, template=False):
         verify_runtime_graph(directory, graph, contents)
         script = staged_hosted_script(graph)
     if hosted.read_bytes() != script.encode():
-        raise SystemExit("Hosted public configuration must match the reviewed client EPG, SWOP, VPortal and control discovery profile")
+        raise SystemExit("Hosted public configuration must match the reviewed server EPG, SWOP, VPortal and control discovery profile")
     if {path.name for path in (Path(directory) / ".herenow").iterdir()} != {"proxy.json", "data.json"}:
         raise SystemExit("SWOP proxy manifest directory contains unexpected publication controls")
     if not template:
@@ -252,6 +282,8 @@ def verify_swop_runtime(directory):
     # execution and discovery behavior are checked by browser acceptance.
     if not CONTROL_DISCOVERY_CAPABILITY.search(script):
         raise SystemExit("Hosted control discovery requires a version 1 release capability marker")
+    if not EPG_SERVER_CAPABILITY.search(script):
+        raise SystemExit("Hosted server EPG requires a version 1 release capability marker")
     for relative in REQUIRED_RUNTIME_ASSETS:
         path = _regular_file(directory, relative, "Hosted runtime asset " + relative.as_posix())
         if not path.stat().st_size:
