@@ -26,5 +26,12 @@ jobs:
           printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' "$archive" | sha256sum --check --strict
           tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
           printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Checkout pinned publisher for offline request contract tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: heredotnow/skill
+          ref: 8cf033ed53b82c0c67b16359c8c431f99e111d04
+          path: .ci-tools/herenow
+          persist-credentials: false
       - name: Run local checks
         run: bash scripts/ci.sh

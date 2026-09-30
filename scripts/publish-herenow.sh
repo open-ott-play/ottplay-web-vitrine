@@ -7,7 +7,7 @@ DIST="${1:-./dist}"
 WORKSPACE="${HERENOW_WORKSPACE:-ottplay}"
 CLIENT="${HERENOW_CLIENT:-github-actions/ottplay-web-vitrine}"
 SLUG="${HERENOW_SITE_SLUG:-}"
-OVERWRITE="${OVERWRITE:-0}"
+EXPECTED_VERSION="${HERENOW_EXPECTED_VERSION:-}"
 SPA="${SPA:-1}"
 
 if [[ ! -d "$DIST" ]]; then
@@ -25,15 +25,23 @@ python3 "$(dirname "${BASH_SOURCE[0]}")/demo_media.py" "$DIST"
 python3 "$(dirname "${BASH_SOURCE[0]}")/msx.py" "$DIST"
 python3 "$(dirname "${BASH_SOURCE[0]}")/swop.py" "$DIST" --runtime
 
-if [[ -z "${HERENOW_API_KEY:-}" && ! -f "${HOME}/.herenow/credentials" ]]; then
-  echo "error: set HERENOW_API_KEY or write ~/.herenow/credentials" >&2
+if [[ "${OVERWRITE:-0}" != "0" && "${OVERWRITE:-0}" != "false" ]]; then
+  echo 'error: unchecked overwrite is disabled; reconcile the live owner inventory and provide HERENOW_EXPECTED_VERSION' >&2
+  exit 1
+fi
+if [[ -n "$SLUG" ]]; then
+  if [[ ! "$EXPECTED_VERSION" =~ ^[a-zA-Z0-9_-]{1,128}$ ]]; then
+    echo 'error: updates require HERENOW_EXPECTED_VERSION from the reviewed owner inventory' >&2
+    exit 1
+  fi
+elif [[ -n "$EXPECTED_VERSION" ]]; then
+  echo 'error: HERENOW_EXPECTED_VERSION requires HERENOW_SITE_SLUG' >&2
   exit 1
 fi
 
-if [[ -n "${HERENOW_API_KEY:-}" ]]; then
-  mkdir -p "${HOME}/.herenow"
-  printf '%s' "$HERENOW_API_KEY" > "${HOME}/.herenow/credentials"
-  chmod 600 "${HOME}/.herenow/credentials"
+if [[ -z "${HERENOW_API_KEY:-}" && ! -f "${HOME}/.herenow/credentials" ]]; then
+  echo "error: set HERENOW_API_KEY or write ~/.herenow/credentials" >&2
+  exit 1
 fi
 
 PUBLISH_SH="${HERENOW_PUBLISH_SCRIPT:-$PWD/.ci-tools/herenow/here-now/scripts/publish.sh}"
@@ -41,6 +49,7 @@ if [[ ! -x "$PUBLISH_SH" ]]; then
   echo 'Check out heredotnow/skill at 8cf033ed53b82c0c67b16359c8c431f99e111d04 into .ci-tools/herenow first.' >&2
   exit 1
 fi
+PUBLISH_SH="$(cd "$(dirname "$PUBLISH_SH")" && pwd)/$(basename "$PUBLISH_SH")"
 PUBLISH_ROOT="$(cd "$(dirname "$PUBLISH_SH")/../.." && pwd)"
 if [[ "$(git -C "$PUBLISH_ROOT" rev-parse HEAD)" != '8cf033ed53b82c0c67b16359c8c431f99e111d04' ]]; then
   echo 'Publisher revision differs from the reviewed CI pin.' >&2
@@ -51,12 +60,10 @@ if [[ -n "$(git -C "$PUBLISH_ROOT" status --porcelain --untracked-files=no)" ]];
   exit 1
 fi
 
+DIST="$(cd "$DIST" && pwd)"
 ARGS=( "$DIST" --workspace "$WORKSPACE" --client "$CLIENT" )
 if [[ -n "$SLUG" ]]; then
   ARGS+=( --slug "$SLUG" )
-fi
-if [[ "$OVERWRITE" == "1" || "$OVERWRITE" == "true" ]]; then
-  ARGS+=( --overwrite )
 fi
 if [[ "$SPA" == "1" || "$SPA" == "true" ]]; then
   ARGS+=( --spa )
@@ -77,4 +84,27 @@ file() {
 export -f file
 
 echo "Publishing $DIST → workspace=$WORKSPACE slug=${SLUG:-'(create/new)'} via $PUBLISH_SH …" >&2
-"$PUBLISH_SH" "${ARGS[@]}"
+if [[ -n "$SLUG" ]]; then
+  # The reviewed publisher reads baseVersionId from state scoped to the absolute
+  # source path. Seed only the explicitly accepted version in a private cwd;
+  # never adopt a newer live version or a previous local checkout's state.
+  # here.now checks this base on both the update PUT and its later finalize.
+  (
+    umask 077
+    PUBLISH_STATE="$(mktemp -d "${TMPDIR:-/tmp}/ottplay-publish.XXXXXXXX")"
+    trap 'rm -rf "$PUBLISH_STATE"' EXIT
+    mkdir "$PUBLISH_STATE/.herenow"
+    python3 - "$SLUG" "$EXPECTED_VERSION" "$DIST" "$PUBLISH_STATE/.herenow/state.json" <<'PY'
+import json
+import sys
+
+slug, version, source, target = sys.argv[1:]
+with open(target, "x", encoding="utf-8") as output:
+    json.dump({"publishes": {slug: {"versionId": version, "path": source}}}, output)
+PY
+    cd "$PUBLISH_STATE"
+    "$PUBLISH_SH" "${ARGS[@]}"
+  )
+else
+  "$PUBLISH_SH" "${ARGS[@]}"
+fi
