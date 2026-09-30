@@ -31,11 +31,12 @@ playback and production deployment are separate checks.
 This repository publishes an existing independently accepted OttPlay FOSS web
 bundle; it never builds application packages. For stable, run `publish-herenow.yml`
 manually from the default branch with `release_channel=stable`, an exact stable
-`vX.Y.Z` player tag and `manifest_sha256` from
+`vX.Y.Z` player tag, `expected_version_id` from the reviewed current production
+owner inventory, and `manifest_sha256` from
 the independently accepted RC manifest receipt. Acceptance must have matched that
 manifest byte for byte to the immutable GitHub Actions `release-evidence` ZIP and
 verified the ZIP digest. Do not derive this input from a fresh mutable stable
-download. Verify the run title's exact tag and full digest before approving the
+download. Verify the run title's exact tag, full digest and expected live version before approving the
 protected `production` environment.
 
 The workflow checks the raw manifest against the accepted digest before fetching
@@ -76,7 +77,8 @@ Use that accepted raw manifest SHA-256 as the workflow input, never a digest
 calculated only from a fresh mutable release download. Keep the accepted raw
 manifest, ZIP, web archive and receipts, and run preview/browser acceptance on the
 same staged package before approving production. The production reviewer must
-bind the exact beta tag and full digest in `Publish <tag> · <digest>` to those
+bind the exact beta tag, full digest and owner version in
+`Publish <tag> · <digest> · from <version>` to those
 receipts. A successful beta build alone is not deployment acceptance.
 
 The protected job preserves this privilege boundary: it does not gain a
@@ -104,7 +106,25 @@ The publisher is pinned to
 `heredotnow/skill@8cf033ed53b82c0c67b16359c8c431f99e111d04`. For local publishing,
 clone that repository into `.ci-tools/herenow`, check out this exact commit and
 use `scripts/publish-herenow.sh`. The wrapper rejects a different or modified
-publisher revision.
+publisher revision. Local checks also use this checkout: the request contract
+tests run the actual publisher against an offline transport, with no API key or
+live site access.
+
+Every existing-site update requires `HERENOW_EXPECTED_VERSION` (the workflow's
+`expected_version_id`) and rejects `OVERWRITE`. Obtain the version together with
+the current file inventory through the authenticated owner API, reconcile it
+with the accepted production receipt, and retain that receipt for approval.
+Do not automatically fetch and accept a newer version during publishing.
+
+The wrapper seeds a private temporary `.herenow/state.json` with only that
+reviewed version, slug and absolute distribution path. This is the pinned
+publisher's supported mechanism for putting `baseVersionId` in the update PUT.
+The service atomically rejects a stale base before granting uploads and rechecks
+it when finalizing. Either conflict fails the run without retry or overwrite;
+reconcile the changed owner inventory before requesting a new approval. Temporary
+state is removed on success or failure; caller state and credential files are
+untouched. Creation of a new preview without a slug requires no base version;
+subsequent preview updates require their own reviewed version.
 
 ## Hosted profile
 
@@ -285,12 +305,14 @@ recovery, and record the preview inventory plus backend immutable image digest.
 Reconcile live owner file/version drift before the complete production replacement.
 
 Only then dispatch the existing protected workflow from the merged default
-branch, with the exact accepted tag and manifest digest:
+branch, with the exact accepted tag, manifest digest and reviewed production
+owner version:
 
 ```sh
 gh workflow run publish-herenow.yml --repo open-ott-play/ottplay-web-vitrine --ref main \
   -f tag="$ACCEPTED_BETA_TAG" \
   -f manifest_sha256="$ACCEPTED_BETA_MANIFEST_SHA256" \
+  -f expected_version_id="$REVIEWED_PRODUCTION_VERSION_ID" \
   -f release_channel=beta
 ```
 

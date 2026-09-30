@@ -22,7 +22,7 @@ class PublishWorkflowContractTests(unittest.TestCase):
         field = workflow["on"]["workflow_dispatch"]["inputs"]["manifest_sha256"]
         self.assertIs(field["required"], True)
         self.assertEqual(field["type"], "string")
-        self.assertEqual(workflow["run-name"], "Publish ${{ inputs.tag }} · ${{ inputs.manifest_sha256 }}")
+        self.assertEqual(workflow["run-name"], "Publish ${{ inputs.tag }} · ${{ inputs.manifest_sha256 }} · from ${{ inputs.expected_version_id }}")
         job = workflow["jobs"]["publish"]
         self.assertEqual(job["environment"], "production")
         steps = [step for step in job["steps"] if "scripts/prepare-dist.py" in step.get("run", "")]
@@ -33,6 +33,22 @@ class PublishWorkflowContractTests(unittest.TestCase):
         channel = workflow["on"]["workflow_dispatch"]["inputs"]["release_channel"]
         self.assertEqual(channel, {"description": "Explicit deployment channel; beta requires independent qualification",
                                    "required": True, "type": "choice", "default": "stable", "options": ["stable", "beta"]})
+
+    def test_owner_version_is_required_and_reaches_the_real_publisher(self):
+        root = Path(__file__).parents[1]
+        workflow = yaml.safe_load((root / ".github/workflows/publish-herenow.yml").read_text())
+        field = workflow["on"]["workflow_dispatch"]["inputs"]["expected_version_id"]
+        self.assertIs(field["required"], True)
+        self.assertEqual(field["type"], "string")
+        publish = next(step for step in workflow["jobs"]["publish"]["steps"]
+                       if "scripts/publish-herenow.sh" in step.get("run", ""))
+        self.assertEqual(publish["env"]["HERENOW_EXPECTED_VERSION"], "${{ inputs.expected_version_id }}")
+        self.assertNotIn("OVERWRITE", publish["env"])
+        validation = yaml.safe_load((root / ".github/workflows/validate.yml").read_text())
+        checkout = next(step for step in validation["jobs"]["validate"]["steps"]
+                        if step.get("with", {}).get("repository") == "heredotnow/skill")
+        self.assertEqual(checkout["with"]["ref"], "8cf033ed53b82c0c67b16359c8c431f99e111d04")
+        self.assertIs(checkout["with"]["persist-credentials"], False)
 
 
 if __name__ == "__main__":
