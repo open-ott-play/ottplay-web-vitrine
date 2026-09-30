@@ -1,5 +1,9 @@
 # Server-prepared M3U programme guide on here.now
 
+For the accepted beta.16 cutover, see the dated
+[production rollout record](epg-rollout-2026-09-30.md). It separates the official
+server and browser measurements from pending physical LG/MSX verification.
+
 The reviewed hosted profile selects `mode: "server"`, `sourceId: "epg-one"` and
 same-origin `apiBase: "/epg/v1"`. A dedicated Rust EPG service downloads and
 indexes the public `https://cdn.epg.one/epg2.xml.gz` source once for all clients,
@@ -9,7 +13,8 @@ window it needs. here.now serves the player and forwards two fixed API routes;
 it does not execute our Rust process or schedule XMLTV processing.
 
 The service is external infrastructure: `Deployment/ottplay-epg` and
-`Service/ottplay-epg` in `synology-apps` on the ARM64 node `h7` in `k3s-heaven`. Cloudflare's h7 tunnel
+`Service/ottplay-epg` in `synology-apps` on the ARM64 node `h7` in `k3s-heaven`.
+Cloudflare's h7 tunnel
 connects `epg.2560801.xyz` to the service. DNS and tunnel ingress are owned by
 `4alvit/terraform-cloudflare-alvit`; publication of this repository alone does
 not provision them. The narrow `NetworkPolicy/ottplay-epg-egress` in
