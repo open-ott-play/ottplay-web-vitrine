@@ -1,5 +1,5 @@
 # Render only after the current official linux/arm64 image has been qualified.
-# Official v1.1.51-beta.16, source f4644eead78de20530c5efede6101cdea98f8db8.
+# Official v1.1.52-beta.1, source 2cc5eac2bbd0437cefd5c013ea7befc48174da83.
 # Immutable image bytes match the retained official release receipt.
 apiVersion: apps/v1
 kind: Deployment
@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: epg
-          image: 192.168.167.25:5050/ottplay-epg@sha256:fd8e93bbcd173b6fd763710b450cf5ffe1f2ee00f03febe52afe1e8758582aae
+          image: 192.168.167.25:5050/ottplay-epg@sha256:ddded9e9024080da04f0dc90c60277275fa84201cfdff78aecf7b8c11e8af75b
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

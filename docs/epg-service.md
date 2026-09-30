@@ -82,14 +82,34 @@ new EPG API and health; legacy playlist, matching, SVG, proxy and debug routes
 must remain inaccessible. Include `.herenow/proxy.json` on every publication:
 omitting it removes proxy routes. Inspect finalize warnings explicitly.
 
+## Remote CLI programme search
+
+The control CLI uses `POST https://epg.2560801.xyz/epg/v1/current` directly for
+configured `ott PLAYER p` queries. This separate route matches the player's
+channel metadata and selects current programmes from one server snapshot. The
+player does not load channel schedules for the command, and the CLI does not
+send its command-server access token to the EPG service. Title search is
+case-insensitive; channels without a current programme are omitted.
+
+This CLI route is allowed by the narrow Cloudflare ingress expression. It does
+not require another here.now proxy route or change the browser guide contract
+above. Deploy compatible control-server and player releases before configuring
+the CLI's public `epg-one` service. A failed query reports an error instead of
+falling back to a player-wide guide scan. See the player's
+[remote EPG protocol](https://github.com/open-ott-play/ottplay-foss/blob/main/docs/remote-epg-control.md)
+for receipt validation, metadata limits and provider matching.
+
 ## Deployment sequence
 
 1. Build and qualify a current official Rust server artifact with the bounded
    EPG v1 API. Import the verified OCI bytes and pin their immutable image digest
    in `deploy/epg/ottplay-epg.yaml`. Record release/source/image identity; never
    restore the historical v1.1.43 pin.
-2. Apply that manifest's dedicated Deployment, Service and connector policy,
-   and the exact DNS/ingress entries from the infrastructure repository. Qualify
+2. For initial provisioning, apply the dedicated Deployment, Service and
+   connector policy, and the exact DNS/ingress entries from the infrastructure
+   repository. For an existing installation, update only the image with a fresh
+   deployment identity/resource-version guard; preserve its configuration and
+   service/network resources. Qualify
    the actual official ARM64 image on node `h7` during its initial
    download: accepted readiness and REN rows, exact image/container identity,
    responsive health, no restart/OOM/limit-pressure event, and authoritative
