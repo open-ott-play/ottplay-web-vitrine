@@ -76,8 +76,9 @@ The host must serve both JSON files as `application/json` with CORS enabled.
 Every publication derives `local/hosted.js` from the reviewed
 `static/local/hosted.js` template and inserts its synchronous script before the
 upstream HTML's other scripts. The script URL includes its content hash. This hosted profile
-selects client EPG, here.now Site Data pairing and an exact VPortal provider
-route. `static/local/swop.json` is deliberately empty: this installation no
+selects server-prepared EPG for the default public source, local XMLTV processing
+for custom or mixed sources, here.now Site Data pairing and an exact VPortal
+provider route. `static/local/swop.json` is deliberately empty: this installation no
 longer selects the old Worker relay. Local and native player installations keep
 their separate transport configuration.
 
@@ -107,8 +108,9 @@ with the new profile or infer compatibility from a release tag alone.
 
 ### Hosted EPG and pairing assets
 
-The EPG server worker, XMLTV worker and its four imported dependencies are copied byte for byte from
-the verified release into `hosted-runtime/<graph-sha>/`, preserving their relative
+The EPG server worker, XMLTV worker, optional diagnostics panel and four XMLTV
+dependencies form a seven-file graph copied byte for byte from the verified
+release into `hosted-runtime/<graph-sha>/`, preserving their relative
 paths. The profile selects the server worker by default and retains the XMLTV
 worker for explicit custom sources, so a change to any dependency gives
 the entire worker graph a new address. A query on the worker alone would leave
@@ -141,6 +143,9 @@ validator. The new EPG API accepts channel metadata and a fixed source ID, never
 private feed URLs. The former installation variable is not referenced. The Rust
 EPG service, its readiness and immutable image pin must be accepted before the
 server-mode frontend is published; see the [EPG runbook](docs/epg-service.md).
+The [beta.16 production acceptance record](docs/epg-rollout-2026-09-30.md)
+documents the deployed architecture, exact release identity, measured results
+and checks that still require a physical LG/MSX device.
 
 ### Publish a reviewed stable release
 
