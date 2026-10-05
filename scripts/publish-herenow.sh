@@ -9,6 +9,7 @@ CLIENT="${HERENOW_CLIENT:-github-actions/ottplay-web-vitrine}"
 SLUG="${HERENOW_SITE_SLUG:-}"
 EXPECTED_VERSION="${HERENOW_EXPECTED_VERSION:-}"
 SPA="${SPA:-1}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ ! -d "$DIST" ]]; then
   echo "error: dist directory not found: $DIST" >&2
@@ -93,6 +94,13 @@ if [[ -n "$SLUG" ]]; then
     umask 077
     PUBLISH_STATE="$(mktemp -d "${TMPDIR:-/tmp}/ottplay-publish.XXXXXXXX")"
     trap 'rm -rf "$PUBLISH_STATE"' EXIT
+    # Keep the strict accepted stage intact. Only authenticated, version-bound
+    # immutable graphs may be added to this private publication copy.
+    python3 "$SCRIPT_DIR/retain_runtime.py" "$DIST" "$PUBLISH_STATE/site" \
+      --receipt "$PUBLISH_STATE/retention.json" --workspace "$WORKSPACE" \
+      --slug "$SLUG" --expected-version "$EXPECTED_VERSION"
+    DIST="$PUBLISH_STATE/site"
+    ARGS[0]="$DIST"
     mkdir "$PUBLISH_STATE/.herenow"
     python3 - "$SLUG" "$EXPECTED_VERSION" "$DIST" "$PUBLISH_STATE/.herenow/state.json" <<'PY'
 import json
