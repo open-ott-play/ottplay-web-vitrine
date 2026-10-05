@@ -1,4 +1,5 @@
 """Exercise the unmodified pinned publisher offline, including its actual PUT body."""
+import base64
 import json
 import os
 from pathlib import Path
@@ -7,6 +8,8 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+
+from retention_fixture import RETAIN, make_owner
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN = "8cf033ed53b82c0c67b16359c8c431f99e111d04"
@@ -36,6 +39,9 @@ record = {"method": method, "url": url, "cwd": str(Path.cwd()),
           "directoryMode": stat.S_IMODE(Path.cwd().stat().st_mode)}
 body = json.loads(args[args.index("-d") + 1]) if "-d" in args else None
 record["body"] = body
+record["sourcePath"] = json.loads(state.read_text())["publishes"]["liminal-sketch-vv8r"]["path"]
+assert Path(record["sourcePath"]).parent == Path.cwd()
+assert Path(record["sourcePath"]).name == "site"
 with (root / "requests.jsonl").open("a") as out:
     out.write(json.dumps(record) + "\n")
 
@@ -75,6 +81,61 @@ else:
 '''
 
 
+# Subprocess-only fixture injection. Production has no alternate host, reader
+# environment option or receipt bypass. Deny every real socket, including if the
+# implementation accidentally stops using the patched owner opener.
+FAKE_OWNER_SITE = r'''import base64
+import io
+import json
+import os
+from pathlib import Path
+import socket
+import urllib.request
+
+root = Path(os.environ["CAS_TEST_ROOT"])
+fixture = json.loads((root / "owner-fixture.json").read_text())
+owner = "https://here.now/api/v1/publish/liminal-sketch-vv8r"
+metadata_reads = 0
+
+class Response(io.BytesIO):
+    status = 200
+    def __init__(self, raw, url):
+        super().__init__(raw)
+        self.url = url
+    def geturl(self):
+        return self.url
+
+class Opener:
+    def open(self, request, timeout):
+        global metadata_reads
+        assert request.get_method() == "GET" and timeout == 30
+        assert request.get_header("Authorization") == "Bearer offline-test-key"
+        assert request.get_header("X-herenow-account") == "ottplay"
+        assert request.full_url.startswith(owner)
+        suffix = request.full_url[len(owner):]
+        with (root / "owner-requests.jsonl").open("a") as output:
+            output.write(json.dumps({"method": "GET", "suffix": suffix}) + "\n")
+        if suffix == "":
+            metadata_reads += 1
+            value = dict(fixture["metadata"])
+            if os.environ["CAS_TEST_SCENARIO"] == "owner-drift" and metadata_reads == 2:
+                value["currentVersionId"] = "unreviewed-concurrent-version"
+            if os.environ["CAS_TEST_SCENARIO"] == "owner-pending":
+                value["pendingVersionId"] = "pending-unreviewed-version"
+            raw = json.dumps(value).encode()
+        elif suffix == "/files":
+            raw = json.dumps(fixture["listing"]).encode()
+        else:
+            raw = base64.b64decode(fixture["bodies"][suffix])
+        return Response(raw, request.full_url)
+
+urllib.request.build_opener = lambda *args: Opener()
+def no_socket(*args, **kwargs):
+    raise AssertionError("A live network request escaped the offline fixture")
+socket.socket = no_socket
+'''
+
+
 class PublishCasTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -106,6 +167,14 @@ class PublishCasTests(unittest.TestCase):
             asset.write_bytes(SWOP["WORKER_HEADER"] + b"self.onmessage = function () {};\n"
                               if relative == Path("hosted/epg-worker.js") else b"/* fixture */\n")
         SWOP["stage_swop"](self.site, ROOT / "static")
+        self.stock = RETAIN.snapshot(self.site)
+        fixture = make_owner(self.site, version=VERSION)
+        self.retained = {item["path"] for item in fixture["listing"]["files"] if item["path"].startswith("hosted-runtime/")}
+        fixture["bodies"] = {name: base64.b64encode(raw).decode() for name, raw in fixture["bodies"].items()}
+        (self.root / "owner-fixture.json").write_text(json.dumps(fixture))
+        python_fixture = self.root / "python-fixture"
+        python_fixture.mkdir()
+        (python_fixture / "sitecustomize.py").write_text(FAKE_OWNER_SITE)
         self.binary = self.root / "bin"
         self.binary.mkdir()
         curl = self.binary / "curl"
@@ -125,13 +194,14 @@ class PublishCasTests(unittest.TestCase):
                     "HERENOW_API_KEY": "offline-test-key", "HERENOW_PUBLISH_SCRIPT": str(self.publisher),
                     "HERENOW_SITE_SLUG": SLUG, "HERENOW_WORKSPACE": "ottplay",
                     "HERENOW_EXPECTED_VERSION": VERSION, "OVERWRITE": "0", "SPA": "1",
-                    "CAS_TEST_ROOT": str(self.root), "CAS_TEST_SCENARIO": "success"}
+                    "CAS_TEST_ROOT": str(self.root), "CAS_TEST_SCENARIO": "success", "PYTHONPATH": str(python_fixture)}
 
     def publish(self, **env):
         result = subprocess.run(["bash", str(ROOT / "scripts/publish-herenow.sh"), self.site.name],
                                 cwd=self.root, env={**self.env, **env}, capture_output=True, text=True,
                                 timeout=40, check=False)
         self.assertEqual(self.prior_state.read_bytes(), self.prior_bytes)
+        self.assertEqual(RETAIN.snapshot(self.site), self.stock)
         self.assertEqual(list(self.tmp.iterdir()), [], "private publisher state must be removed")
         self.assertFalse((self.root / "home/.herenow/credentials").exists())
         self.assertNotIn("offline-test-key", result.stdout + result.stderr)
@@ -150,11 +220,24 @@ class PublishCasTests(unittest.TestCase):
         body = requests[0]["body"]
         self.assertEqual(body["baseVersionId"], VERSION)
         files = {row["path"]: row for row in body["files"]}
-        self.assertEqual(set(files), {p.relative_to(self.site).as_posix() for p in self.site.rglob("*") if p.is_file()})
+        self.assertEqual(set(files), set(self.stock["files"]) | self.retained)
+        self.assertEqual(Path(requests[0]["sourcePath"]).parent, Path(requests[0]["cwd"]))
+        self.assertNotEqual(Path(requests[0]["sourcePath"]), self.site)
+        self.assertEqual(len(self.retained), 14)
+        self.assertTrue(all(files[name]["contentType"] == RETAIN.JS_MIME for name in self.retained))
+        self.assertNotIn("retention.json", files)
         self.assertNotIn(".herenow/state.json", files)
         self.assertEqual(files["demo/pattern.m3u8"]["contentType"], "application/vnd.apple.mpegurl")
         self.assertEqual(files["demo/pattern0.ts"]["contentType"], "video/mp2t")
         self.assertIn("publish_result.live_version_id=accepted-test-version", result.stderr)
+
+    def test_owner_drift_or_pending_stops_before_any_publisher_mutation(self):
+        for scenario in ("owner-drift", "owner-pending"):
+            with self.subTest(scenario=scenario):
+                result, requests = self.publish(CAS_TEST_SCENARIO=scenario)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(requests, [])
+                self.assertIn("version changed", result.stderr)
 
     def test_update_conflict_stops_before_upload_or_finalize_without_retry(self):
         result, requests = self.publish(CAS_TEST_SCENARIO="update-conflict")

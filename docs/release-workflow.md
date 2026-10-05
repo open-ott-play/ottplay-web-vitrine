@@ -76,7 +76,8 @@ API ZIP digest and prove its manifest bytes equal the published raw manifest.
 Use that accepted raw manifest SHA-256 as the workflow input, never a digest
 calculated only from a fresh mutable release download. Keep the accepted raw
 manifest, ZIP, web archive and receipts, and run preview/browser acceptance on the
-same staged package before approving production. The production reviewer must
+publication copy described below before approving production. The production
+reviewer must
 bind the exact beta tag, full digest and owner version in
 `Publish <tag> · <digest> · from <version>` to those
 receipts. A successful beta build alone is not deployment acceptance.
@@ -116,8 +117,47 @@ the current file inventory through the authenticated owner API, reconcile it
 with the accepted production receipt, and retain that receipt for approval.
 Do not automatically fetch and accept a newer version during publishing.
 
+Existing-site updates preserve immutable runtime URLs used by already-open tabs.
+The wrapper first runs the unchanged strict checks against the accepted stock
+`dist/`. It then creates a private publication copy, reads the authenticated owner
+inventory at exactly the reviewed version, and retains every existing
+`hosted-runtime/<digest>/` graph. It never edits the stock stage or replaces a
+new-release file. The current release still selects its normal canonical graph.
+
+Each retained graph must contain exactly the seven reviewed runtime paths. Owner
+sizes and SHA-256 hashes must match the downloaded bytes; JavaScript MIME types
+must match the pinned publisher. The directory name must match the canonical graph hash or the previously deployed
+sorted-path variant. Worker import rules still apply. Owner reads reject redirects
+and pending publications, and recheck the version and inventory before the copy
+is accepted. Any live demo, MSX, `.herenow/` or `local/swop.json` inventory, size,
+hash or MIME difference from the stock stage stops publication for reconciliation.
+The final copy must contain exactly the unchanged stock tree plus these attested
+additions. Receipts are evidence outputs, never an input that grants exceptions.
+
+For local browser acceptance, construct the same copy without publishing:
+
+```sh
+python3 scripts/retain_runtime.py ./dist ../publication-copy \
+  --receipt ../publication-retention.json \
+  --workspace ottplay --slug liminal-sketch-vv8r \
+  --expected-version "$REVIEWED_PRODUCTION_VERSION_ID"
+```
+
+Use new output paths outside `dist/`; the receipt also stays outside the publication
+copy. The command needs owner credentials and makes only authenticated GETs. Keep
+its receipt (owner identity, graph/file hashes, exact union and final tree digest)
+with browser/cache acceptance. Preview this copy and compare the complete deployed
+inventory with it after publishing. The wrapper reconstructs the same copy before
+its CAS update and removes its temporary copy, receipt and publisher state afterward.
+The strict `swop.py --runtime` command continues to accept only the stock stage.
+
+Retention is bounded at 16 graphs, 2 MB per graph file, 8 MB per graph and 32 MB
+total. Reaching a limit fails closed; it never silently prunes an old URL. Any
+future removal or changed publication controls requires a separate reviewed
+reconciliation, not an overwrite flag.
+
 The wrapper seeds a private temporary `.herenow/state.json` with only that
-reviewed version, slug and absolute distribution path. This is the pinned
+reviewed version, slug and absolute publication-copy path. This is the pinned
 publisher's supported mechanism for putting `baseVersionId` in the update PUT.
 The service atomically rejects a stale base before granting uploads and rechecks
 it when finalizing. Either conflict fails the run without retry or overwrite;
@@ -298,8 +338,9 @@ python3 scripts/check-epg.py https://epg.2560801.xyz
 
 These are staging/verification commands, not publication. They preserve release
 bytes and fail on an old frontend, wrong proxy routes, missing worker or cold
-backend. Preview publication must use that exact staged payload and accepted
-backend generation. Complete the [browser/TV acceptance](epg-service.md#acceptance)
+backend. Construct the owner-verified publication copy described above and use
+that exact payload and accepted backend generation for preview acceptance. Complete
+the [browser/TV acceptance](epg-service.md#acceptance)
 on the preview, including no default-source public XMLTV request and generation
 recovery, and record the preview inventory plus backend immutable image digest.
 Reconcile live owner file/version drift before the complete production replacement.
