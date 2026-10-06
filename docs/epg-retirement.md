@@ -54,9 +54,9 @@ cloudflared-h7 Deployment, the h7 tunnel, or any broader NetworkPolicy. This
 installation created no PVC or database. The retained release image is an
 inactive artifact; deleting shared registry data is not part of this cleanup.
 
-The dedicated DNS record and two h7 ingress entries are owned separately by
-`4alvit/terraform-cloudflare-alvit`; follow its `docs/ottplay-epg.md` bounded
-plan. Preserve the separately owned SWOP Worker: this retirement does not
+The dedicated DNS record and two h7 ingress entries have a separate
+infrastructure owner. Use the operator's bounded retirement plan for those
+exact resources and preserve all other routes. Preserve the separately owned SWOP Worker: this retirement does not
 establish that all its other clients have migrated.
 
 After deletion, verify the named resources are absent, all unrelated h7 routes
