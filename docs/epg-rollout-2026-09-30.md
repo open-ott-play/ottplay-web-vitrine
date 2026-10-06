@@ -68,10 +68,10 @@ Implementation is recorded in [FOSS #618](https://github.com/open-ott-play/ottpl
 (trie integration and phase diagnostics), and
 [vitrine #27](https://github.com/open-ott-play/ottplay-web-vitrine/pull/27)
 (profile, routes, immutable assets and deployment).
-Infrastructure [PR #25](https://github.com/4alvit/terraform-cloudflare-alvit/pull/25)
-was applied by HCP run `run-CeWkdDt8XoezGjHT`; it added the dedicated hostname and
-fixed ingress while preserving all seven existing routes. That repository is
-private. All these PRs were merged before production acceptance.
+The separate infrastructure change added the dedicated hostname and fixed
+ingress while preserving all seven existing routes. The operator retains the
+infrastructure approval and apply evidence. The application PRs listed above
+were merged before production acceptance.
 
 ## Observed acceptance results
 

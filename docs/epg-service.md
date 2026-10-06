@@ -15,9 +15,9 @@ it does not execute our Rust process or schedule XMLTV processing.
 The service is external infrastructure: `Deployment/ottplay-epg` and
 `Service/ottplay-epg` in `synology-apps` on the ARM64 node `h7` in `k3s-heaven`.
 Cloudflare's h7 tunnel
-connects `epg.2560801.xyz` to the service. DNS and tunnel ingress are owned by
-`4alvit/terraform-cloudflare-alvit`; publication of this repository alone does
-not provision them. The narrow `NetworkPolicy/ottplay-epg-egress` in
+connects `epg.2560801.xyz` to the service. DNS and tunnel ingress have a separate infrastructure owner; publication of
+this repository alone does not provision them. Coordinate their changes through
+the operator's infrastructure runbook. The narrow `NetworkPolicy/ottplay-epg-egress` in
 `cloudflared` permits the connector to reach that service. SWOP remains here.now
 Site Data, VPortal retains its fixed provider proxy, and command discovery is a
 separate optional bridge. None of these routes forwards video through EPG.
