@@ -29,6 +29,11 @@ jobs:
       run: ${{ steps.scope.outputs.run }}
       reason: ${{ steps.scope.outputs.reason }}
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -63,11 +68,34 @@ jobs:
       - scope
       - workflow-contracts
     if: ${{ needs.scope.outputs.run == 'true' }}
+  check-2:
+    uses: ./.github/workflows/codeql.yml
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    needs:
+    - scope
+    - workflow-contracts
+    if: ${{ needs.scope.outputs.run == 'true' }}
+  check-3:
+    uses: ./.github/workflows/dependency-review.yml
+    permissions:
+      contents: read
+    needs:
+    - scope
+    - workflow-contracts
+    if: ${{ needs.scope.outputs.run == 'true' }}
   workflow-contracts:
     name: CI configuration contracts
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -86,10 +114,17 @@ jobs:
       - check-0
       - check-1
       - workflow-contracts
+      - check-2
+      - check-3
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+
       - name: Require every validation workflow
         env:
           RESULTS: ${{ toJSON(needs) }}
@@ -97,7 +132,7 @@ jobs:
           python3 - <<'PY'
           import json, os
           results = json.loads(os.environ['RESULTS'])
-          expected = ['check-0', 'check-1', 'scope', 'workflow-contracts']
+          expected = ['check-0', 'check-1', 'scope', 'workflow-contracts', 'check-2', 'check-3']
           always = ['scope']
           if set(results) != set(expected):
               raise SystemExit('Validation job inventory differs')
