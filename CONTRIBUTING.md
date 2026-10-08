@@ -24,9 +24,11 @@ git -C .ci-tools/herenow checkout --detach 8cf033ed53b82c0c67b16359c8c431f99e111
 bash scripts/ci.sh
 ```
 
-The pinned publisher checkout is used by offline request-contract tests; these
-tests replace network clients and do not publish a site. For an existing checkout,
-verify its exact revision rather than cloning over it.
+The pinned publisher checkout is used by offline request-contract tests and
+loopback TLS tests; neither publishes a site. The TLS tests need OpenSSL and an
+OpenSSL 3 curl, selectable with `PUBLISH_TLS_TEST_CURL=/path/to/curl` on hosts
+whose default curl uses another backend. CI runs them on Ubuntu with OpenSSL 3.
+For an existing checkout, verify its exact revision rather than cloning over it.
 
 This repository packages an independently accepted player artifact; it does not compile the player. Validation and local artifact preparation do not publish a site. Follow the release-workflow document for the separately authorized publication step.
 

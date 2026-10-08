@@ -27,6 +27,12 @@ import stat
 import sys
 
 args = sys.argv[1:]
+if args == ["--disable", "--version"]:
+    print("curl 8.22.0 libcurl/8.22.0 " + os.environ.get("CAS_TEST_CURL_BACKEND", "OpenSSL/3.6.4"))
+    raise SystemExit(0)
+assert args[:6] == ["--disable", "--tlsv1.2", "--proto", "=https", "--ciphers",
+                    "DEFAULT:@SECLEVEL=" + os.environ.get("OTTPLAY_CURL_SECURITY_LEVEL", "2")]
+args = args[6:]
 method = args[args.index("-X") + 1]
 url = next(arg for arg in args if arg.startswith("https://"))
 root = Path(os.environ["CAS_TEST_ROOT"])
@@ -212,6 +218,23 @@ class PublishCasTests(unittest.TestCase):
             self.assertEqual(record["directoryMode"], 0o700)
             self.assertNotEqual(record["cwd"], str(self.root))
         return result, records
+
+    def test_unsupported_curl_or_invalid_policy_stops_before_owner_or_publisher_requests(self):
+        for env in ({"CAS_TEST_CURL_BACKEND": "LibreSSL/3.3.6"},
+                    {"CAS_TEST_CURL_BACKEND": "Schannel"},
+                    {"CAS_TEST_CURL_BACKEND": "(OpenSSL/3.6.4) Schannel"},
+                    {"OTTPLAY_CURL_SECURITY_LEVEL": "1"},
+                    {"OTTPLAY_CURL_SECURITY_LEVEL": "2 --insecure"}):
+            with self.subTest(env=env):
+                result, requests = self.publish(**env)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(requests, [])
+                self.assertFalse((self.root / "owner-requests.jsonl").exists())
+
+    def test_explicit_stricter_policy_reaches_every_publisher_call(self):
+        result, requests = self.publish(OTTPLAY_CURL_SECURITY_LEVEL="3")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([r["method"] for r in requests], ["PUT", "PUT", "POST"])
 
     def test_real_update_body_carries_reviewed_base_and_preserves_full_manifest(self):
         result, requests = self.publish()

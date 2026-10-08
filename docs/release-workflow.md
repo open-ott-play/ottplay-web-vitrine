@@ -8,12 +8,14 @@ fail `CI gate`. Manual and scheduled validation run the full configured checks.
 
 ## Local checks
 
-Use Python 3.11+, actionlint 1.7.12 and Node.js for JavaScript validation:
+Use Python 3.12+, actionlint 1.7.12 and Node.js for JavaScript validation.
+Network operations additionally require the verified
+[host TLS profiles](security-design.md#host-tls-profile):
 
 ```sh
-python3 -m pip install PyYAML==6.0.3
+python3 -m pip install --require-hashes --only-binary=:all: -r .github/requirements-workflow-contracts.txt
 bash scripts/ci.sh
-python3 scripts/release.py status
+GH_HOST=github.com GODEBUG=fips140=on python3 scripts/release.py status
 ```
 
 Request or inspect hosted validation:
@@ -107,9 +109,12 @@ The publisher is pinned to
 `heredotnow/skill@8cf033ed53b82c0c67b16359c8c431f99e111d04`. For local publishing,
 clone that repository into `.ci-tools/herenow`, check out this exact commit and
 use `scripts/publish-herenow.sh`. The wrapper rejects a different or modified
-publisher revision. Local checks also use this checkout: the request contract
-tests run the actual publisher against an offline transport, with no API key or
-live site access.
+publisher revision. It also requires an active OpenSSL 3 curl backend, enforces
+TLS 1.2+ and security level 2+, and ignores `.curlrc` only for its own commands.
+See the [publisher transport profile](security-design.md#publisher-transport)
+before local publishing, including how to select a stricter policy. Local checks
+use this checkout for offline request-contract tests and real loopback TLS tests;
+they use synthetic credentials and never access a live site.
 
 Every existing-site update requires `HERENOW_EXPECTED_VERSION` (the workflow's
 `expected_version_id`) and rejects `OVERWRITE`. Obtain the version together with
