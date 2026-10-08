@@ -6,4 +6,5 @@ python3 scripts/demo_media.py static
 python3 scripts/msx.py static
 python3 scripts/swop.py static
 node --test deploy/epg-worker-vpc/relay.test.mjs
+npm test --prefix deploy/epg-worker-vpc/runtime-tests
 python3 -m unittest discover -s tests -v

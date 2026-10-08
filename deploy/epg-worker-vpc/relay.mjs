@@ -42,6 +42,17 @@ function cancel(stream) {
   try { void stream?.cancel().catch(() => {}); } catch { /* Already locked or closed. */ }
 }
 
+function nativeByteReader(stream) {
+  try {
+    const reader = stream.getReader({ mode: "byob" });
+    if (typeof reader.readAtLeast === "function") return reader;
+    reader.releaseLock();
+  } catch (error) {
+    if (stream.locked) throw error;
+  }
+  return undefined;
+}
+
 function validClientIP(value) {
   if (!value || value.length > 45) return false;
   const ipv4 = (ip) => {
@@ -119,6 +130,31 @@ async function readRequest(request, signal) {
       || (encoding && encoding.toLowerCase() !== "identity")) throw new RelayError(400);
   const expected = contentLength(request.headers, MAX_REQUEST_BYTES);
   if (!request.body) throw new RelayError(400);
+  // Native Workers byte streams can fill a bounded buffer without re-entering
+  // JavaScript for each transport chunk. One extra byte detects overflow.
+  const nativeReader = nativeByteReader(request.body);
+  if (nativeReader) {
+    const stop = () => cancel(nativeReader);
+    signal.addEventListener("abort", stop, { once: true });
+    try {
+      signal.throwIfAborted();
+      const capacity = (expected ?? MAX_REQUEST_BYTES) + 1;
+      const { value } = await nativeReader.readAtLeast(capacity, new Uint8Array(capacity));
+      signal.throwIfAborted();
+      const size = value?.byteLength ?? 0;
+      if (size > MAX_REQUEST_BYTES) throw new RelayError(413);
+      if (!size || (expected !== null && expected !== size)) throw new RelayError(400);
+      // A short readAtLeast is possible only at EOF. Return its exact view:
+      // the original buffer is detached and the extra capacity is not payload.
+      return value;
+    } catch (error) {
+      stop();
+      throw error;
+    } finally {
+      signal.removeEventListener("abort", stop);
+      nativeReader.releaseLock();
+    }
+  }
   const reader = request.body.getReader();
   // Bound retained memory even when the caller sends one byte per chunk.
   const body = new Uint8Array(expected ?? MAX_REQUEST_BYTES);
@@ -176,8 +212,9 @@ function exchange(request) {
 }
 
 function streamResponse(response, selected, state, expected) {
-  const reader = response.body?.getReader();
-  let ended = false, size = 0, output;
+  const nativeReader = response.body && nativeByteReader(response.body);
+  const reader = nativeReader || response.body?.getReader();
+  let ended = false, size = 0, output, firstRead = true;
   const finish = (failed) => {
     if (ended) return;
     ended = true;
@@ -201,7 +238,19 @@ function streamResponse(response, selected, state, expected) {
     async pull(controller) {
       try {
         state.signal.throwIfAborted();
-        const { value, done } = reader ? await reader.read() : { done: true };
+        let next;
+        if (nativeReader) {
+          const capacity = Math.min(64 * 1024, selected.bytes - size + 1,
+            expected === null ? Infinity : expected - size + 1);
+          // Deliver the first available bytes promptly, then coalesce transport
+          // fragments natively. Keep a chunked outer stream until verified EOF;
+          // a Content-Length response could hide a delayed excess byte.
+          next = await nativeReader.readAtLeast(firstRead ? 1 : capacity, new Uint8Array(capacity));
+          firstRead = false;
+        } else {
+          next = reader ? await reader.read() : { done: true };
+        }
+        const { value, done } = next;
         if (ended) return;
         state.signal.throwIfAborted();
         if (done) {
@@ -211,7 +260,7 @@ function streamResponse(response, selected, state, expected) {
         } else {
           size += value.byteLength;
           if (size > selected.bytes || (expected !== null && size > expected)) throw new Error("EPG_RELAY");
-          // Forward the original chunk; programme responses are never accumulated.
+          // Programme responses are never accumulated or reserialized.
           controller.enqueue(value);
         }
       } catch { fail(); }

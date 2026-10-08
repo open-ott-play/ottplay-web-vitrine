@@ -48,6 +48,15 @@ and serialization adds metadata. The current endpoint already bounds serialized
 JSON at 2 MiB. The match cap is an additional transport bound, matching the
 existing operator smoke check; pathological oversized match metadata is rejected.
 Responses stream without JSON parsing, reserialization, or whole-response copies.
+On Workers, request reads use the native BYOB `readAtLeast` operation with a
+bounded buffer and one overflow byte. Declared request lengths use only their
+own size plus that byte; requests without a length use the 512 KiB cap plus one.
+An observed length mismatch is rejected before backend access. Native response
+reads deliver the first available bytes promptly, then coalesce fragments into
+at most 64 KiB per JavaScript callback. The outer stream remains chunked until
+verified EOF, so reaching a declared Content-Length cannot hide delayed excess
+bytes or a stalled source. Runtimes without the native stream extension use the
+existing bounded JavaScript paths.
 The full exchange has a twelve-second deadline, including request/response body
 reads. An invalid response detected before headers returns a generic JSON error.
 Overflow, truncation, timeout, or cancellation after response streaming begins
@@ -99,6 +108,8 @@ From the repository root, with Node.js and Terraform installed:
 
 ```sh
 node --test deploy/epg-worker-vpc/relay.test.mjs
+npm ci --ignore-scripts --prefix deploy/epg-worker-vpc/runtime-tests
+npm test --prefix deploy/epg-worker-vpc/runtime-tests
 terraform -chdir=deploy/epg-worker-vpc/terraform init -backend=false -lockfile=readonly
 terraform -chdir=deploy/epg-worker-vpc/terraform fmt -check -recursive
 terraform -chdir=deploy/epg-worker-vpc/terraform validate
@@ -107,6 +118,10 @@ terraform -chdir=deploy/epg-worker-vpc/terraform test
 
 The Terraform tests use a mock provider and do not create resources. Offline
 tests do not prove live VPC connectivity, CPU usage, quota headroom, or playback.
+The pinned workerd tests exercise the native stream paths; the Node tests also
+cover their portable fallbacks. Requalify CPU with separated ordinary and large
+requests after changing the relay. Successful HTTP responses alone do not prove
+headroom under the Free CPU limit.
 
 ## Deployment and cutover
 
@@ -147,5 +162,6 @@ tests do not prove live VPC connectivity, CPU usage, quota headroom, or playback
 References: [VPC Services](https://developers.cloudflare.com/workers-vpc/configuration/vpc-services/),
 [VPC pricing](https://developers.cloudflare.com/workers-vpc/platform/pricing/),
 [Workers limits](https://developers.cloudflare.com/workers/platform/limits/),
+[native BYOB reads](https://developers.cloudflare.com/workers/runtime-apis/streams/readablestreambyobreader/),
 [rate-limit locality and accuracy](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/),
 [here.now proxy routes](https://here.now/docs#proxy-routes).
