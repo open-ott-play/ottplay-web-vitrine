@@ -61,6 +61,31 @@ if [[ -n "$(git -C "$PUBLISH_ROOT" status --porcelain --untracked-files=no)" ]];
   exit 1
 fi
 
+# Use one verified TLS backend and policy for every curl subprocess in the
+# pinned Bash publisher. Disable per-user curl config for these calls only.
+# No caller-controlled extra arguments are accepted by this wrapper.
+OTTPLAY_PUBLISH_CURL="$(type -P curl)" || {
+  echo 'error: publishing requires curl with an active OpenSSL 3 backend' >&2
+  exit 1
+}
+OTTPLAY_PUBLISH_CURL="$(cd "$(dirname "$OTTPLAY_PUBLISH_CURL")" && pwd)/$(basename "$OTTPLAY_PUBLISH_CURL")"
+CURL_VERSION="$("$OTTPLAY_PUBLISH_CURL" --disable --version)"
+if [[ ! "${CURL_VERSION%%$'\n'*}" =~ (^|[[:space:]])OpenSSL/3\.[0-9]+\.[0-9]+([[:space:]]|$) ]]; then
+  echo 'error: publishing requires curl with an active OpenSSL 3 backend; select it in PATH' >&2
+  exit 1
+fi
+OTTPLAY_CURL_SECURITY_LEVEL="${OTTPLAY_CURL_SECURITY_LEVEL:-2}"
+if [[ ! "$OTTPLAY_CURL_SECURITY_LEVEL" =~ ^[2-5]$ ]]; then
+  echo 'error: OTTPLAY_CURL_SECURITY_LEVEL must be 2, 3, 4 or 5' >&2
+  exit 1
+fi
+export OTTPLAY_PUBLISH_CURL OTTPLAY_CURL_SECURITY_LEVEL
+curl() {
+  "$OTTPLAY_PUBLISH_CURL" --disable --tlsv1.2 --proto '=https' \
+    --ciphers "DEFAULT:@SECLEVEL=$OTTPLAY_CURL_SECURITY_LEVEL" "$@"
+}
+export -f curl
+
 DIST="$(cd "$DIST" && pwd)"
 ARGS=( "$DIST" --workspace "$WORKSPACE" --client "$CLIENT" )
 if [[ -n "$SLUG" ]]; then

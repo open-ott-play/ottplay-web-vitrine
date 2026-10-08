@@ -108,8 +108,8 @@ class DemoMediaTests(unittest.TestCase):
                 self.assertFalse((home / ".herenow/credentials").exists())
 
     def test_complete_demo_reaches_publisher_with_hls_mime_types(self):
-        # Stub only the external publisher and its git revision check. Exercise
-        # the real wrapper, media validation and Bash subprocess inheritance.
+        # Stub external tools; exercise the real wrapper, media validation and
+        # Bash subprocess inheritance without making a network request.
         binary = self.root / "bin"
         binary.mkdir()
         git = binary / "git"
@@ -118,6 +118,11 @@ class DemoMediaTests(unittest.TestCase):
                        "  echo 8cf033ed53b82c0c67b16359c8c431f99e111d04\n"
                        "elif [[ \"$3\" != status ]]; then exit 1; fi\n")
         git.chmod(0o755)
+        curl = binary / "curl"
+        curl.write_text("#!/usr/bin/env bash\n"
+                        "[[ \"$*\" == '--disable --version' ]] || exit 1\n"
+                        "echo 'curl 8.22.0 libcurl/8.22.0 OpenSSL/3.6.4'\n")
+        curl.chmod(0o755)
         publisher = self.root / "publisher/here-now/scripts/publish.sh"
         publisher.parent.mkdir(parents=True)
         publisher.write_text("#!/usr/bin/env bash\nset -euo pipefail\n"

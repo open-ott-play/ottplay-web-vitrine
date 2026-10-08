@@ -180,10 +180,12 @@ current `main` release run, complete API asset inventory and full beta build
 metadata, preserving the downloaded player bytes without RC/stable promotion or
 rebuild. See [the beta deployment contract](docs/release-workflow.md#explicit-qualified-beta-deployment).
 
-Discover the Site slug (owner API key):
+Before local network operations, verify the [host TLS profiles](docs/security-design.md#host-tls-profile).
+Discover the Site slug with an OpenSSL 3 curl (owner API key):
 
 ```bash
-curl -sS -H "Authorization: Bearer $HERENOW_API_KEY" \
+curl --disable --tlsv1.2 --proto '=https' --ciphers 'DEFAULT:@SECLEVEL=2' -sS \
+  -H "Authorization: Bearer $HERENOW_API_KEY" \
   -H "X-HereNow-Account: ottplay" \
   https://here.now/api/v1/publishes | jq .
 ```
