@@ -72,6 +72,46 @@ class PublicEpgTests(unittest.TestCase):
             check_public(self.stage)
         probe.assert_called_once_with("https://player.ottplay.here.now")
 
+    def test_cutover_checks_fixed_new_origin_and_current_route_without_using_old_public_route(self):
+        probe = Mock(return_value=self.result)
+        current = Mock(return_value=self.result)
+        with patch.dict(PUBLIC["EPG"], {"check": probe, "check_current": current}), \
+                patch("time.time", return_value=10000):
+            value = PUBLIC["check_upstream"](self.stage)
+        origin = PUBLIC["EPG_API_URL"].removesuffix("/epg/v1")
+        probe.assert_called_once_with(origin)
+        current.assert_called_once_with(origin, expected_generation="current-generation")
+        self.assertNotEqual(origin, PUBLIC["PUBLIC_ORIGIN"])
+        self.assertEqual(value["checkedOrigin"], origin)
+        self.assertTrue(value["currentEndpointVerified"])
+
+    def test_cutover_rejects_bad_stock_before_either_network_call(self):
+        path = self.stage / ".herenow/proxy.json"
+        changed = json.loads(path.read_text())
+        changed["proxies"]["/epg/v1/match"]["upstream"] = "https://unreviewed.example/epg/v1/match"
+        path.write_text(json.dumps(changed))
+        probe, current = Mock(), Mock()
+        with patch.dict(PUBLIC["EPG"], {"check": probe, "check_current": current}), \
+                self.assertRaises(SystemExit):
+            PUBLIC["check_upstream"](self.stage)
+        probe.assert_not_called()
+        current.assert_not_called()
+
+    def test_cutover_requires_both_fresh_results_and_propagates_current_failure(self):
+        for endpoint in ("check", "check_current"):
+            for invalid in ({"stale": True}, {"fetchedAt": 2800000}, {"fetchedAt": 10301000}):
+                probes = {key: Mock(return_value=self.result) for key in ("check", "check_current")}
+                probes[endpoint].return_value = {**self.result, **invalid}
+                with self.subTest(endpoint=endpoint, invalid=invalid), \
+                        patch.dict(PUBLIC["EPG"], probes), patch("time.time", return_value=10000), \
+                        self.assertRaises(ValueError):
+                    PUBLIC["check_upstream"](self.stage)
+        current = Mock(side_effect=ValueError("generation changed"))
+        with patch.dict(PUBLIC["EPG"], {"check": Mock(return_value=self.result), "check_current": current}), \
+                patch("time.time", return_value=10000), self.assertRaisesRegex(ValueError, "generation changed"):
+            PUBLIC["check_upstream"](self.stage)
+        current.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

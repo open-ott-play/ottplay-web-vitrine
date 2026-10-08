@@ -6,7 +6,7 @@ import sys
 import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 SOURCE_ID = "epg-one"
@@ -17,6 +17,16 @@ EPG_ERRORS = {
     "EPG_CHANNEL": 404, "EPG_GENERATION": 409, "EPG_BUSY": 429,
     "EPG_CHANNEL_LIMIT": 422, "EPG_INTERNAL": 500, "EPG_TIMEOUT": 504,
 }
+
+
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+# Keep every probe at the explicitly selected origin, including POST requests.
+# Retain a module-level binding so offline tests can replace only the transport.
+urlopen = build_opener(NoRedirect()).open
 
 
 class EpgHttpError(Exception):
@@ -113,6 +123,8 @@ def http_diagnostic(request, stage, error):
 def read_json(request, stage):
     try:
         with urlopen(request, timeout=30) as response:
+            if response.status != 200:
+                raise ValueError("EPG endpoint did not return HTTP 200")
             if "application/json" not in response.headers.get("Content-Type", ""):
                 raise ValueError("EPG endpoint did not return JSON")
             body = response.read(MAX_RESPONSE_BYTES + 1)
@@ -175,6 +187,42 @@ def check(base):
     return {"source": SOURCE_ID, "generation": guide["generation"], "fetchedAt": guide["fetchedAt"],
             "stale": guide["stale"], "programmes": len(programmes), "archived": len(archived),
             "current": current[0]["name"]}
+
+
+def check_current(base, expected_generation=None):
+    """Check the upstream-only current route with one public synthetic channel."""
+    base = base.rstrip("/")
+    parsed = urlsplit(base)
+    if (parsed.scheme != "https" or not parsed.hostname or
+            parsed.username is not None or parsed.password is not None or
+            parsed.path or parsed.query or parsed.fragment):
+        raise ValueError("Expected an HTTPS origin without credentials")
+    headers = {"Accept": "application/json", "Content-Type": "application/json", "Origin": base,
+               "User-Agent": "OTT-play-EPG-check/2.0", "Cache-Control": "no-cache"}
+    body = json.dumps({"version": 1, "source": SOURCE_ID, "search": "", "channels": [
+        {"id": "ren-hd", "tvgId": "hlsproxy-382", "tvgName": "", "name": "РЕН ТВ HD", "shift": 0}
+    ]}, ensure_ascii=False).encode()
+    result = read_json(Request(base + "/epg/v1/current", data=body, headers=headers), "current")
+    if (type(result["version"]) is not int or
+            type(result.get("asOf")) is not int or abs(result["asOf"] - time.time()) > 60 or
+            type(result.get("checked")) is not int or result["checked"] != 1 or
+            type(result.get("total")) is not int or result["total"] != 1 or
+            not isinstance(result.get("programs"), list) or len(result["programs"]) != 1):
+        raise ValueError("EPG current response has invalid time or channel coverage")
+    if expected_generation is not None and result["generation"] != expected_generation:
+        raise ValueError("EPG generation changed during the current smoke check")
+    programme = result["programs"][0]
+    if (not isinstance(programme, dict) or programme.get("id") != "ren-hd" or
+            not isinstance(programme.get("title"), str) or not programme["title"].strip() or
+            len(programme["title"].encode("utf-16-le")) > 32768 or
+            any(type(programme.get(key)) is not int or
+                not -9007199254740991 <= programme[key] <= 9007199254740991
+                for key in ("start", "end")) or
+            not programme["start"] <= result["asOf"] < programme["end"]):
+        raise ValueError("РЕН ТВ HD current programme is missing or invalid")
+    return {"source": SOURCE_ID, "generation": result["generation"], "fetchedAt": result["fetchedAt"],
+            "stale": result["stale"], "asOf": result["asOf"], "checked": result["checked"],
+            "total": result["total"], "programmes": 1, "current": programme["title"]}
 
 
 if __name__ == "__main__":

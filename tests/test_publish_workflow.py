@@ -13,8 +13,9 @@ class PublishWorkflowContractTests(unittest.TestCase):
         publish = next(i for i, step in enumerate(steps) if "scripts/publish-herenow.sh" in step.get("run", ""))
         guard = steps[publish - 1]
         after = steps[publish + 1]
+        self.assertEqual(guard["run"], "python3 scripts/check-public-epg.py ./dist --upstream")
+        self.assertEqual(after["run"], "python3 scripts/check-public-epg.py ./dist")
         for step in (guard, after):
-            self.assertEqual(step["run"], "python3 scripts/check-public-epg.py ./dist")
             self.assertNotIn("if", step)
             self.assertFalse(step.get("continue-on-error", False))
 

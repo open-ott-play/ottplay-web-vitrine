@@ -14,7 +14,7 @@ PROXY_PATH = Path(".herenow/proxy.json")
 DATA_PATH = Path(".herenow/data.json")
 EXPECTED_CONFIG = {}
 PROVIDER_URL = "http://cd3c21307c36.vportalu.net/api/v1/"
-EPG_API_URL = "https://epg.2560801.xyz/epg/v1"
+EPG_API_URL = "https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1"
 CONTROL_DISCOVERY_URL = "https://www.2560801.xyz/ott-control/api/discovery"
 CONTROL_DISCOVERY_SCRIPT = "window.__OTT_CONTROL_DISCOVERY_URL__ = " + json.dumps(CONTROL_DISCOVERY_URL) + ";\n"
 CONTROL_DISCOVERY_CAPABILITY = re.compile(

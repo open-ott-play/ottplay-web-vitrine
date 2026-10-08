@@ -1,7 +1,7 @@
 {
   "proxies": {
     "/epg/v1/match": {
-      "upstream": "https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1/match",
+      "upstream": "https://epg.2560801.xyz/epg/v1/match",
       "method": "POST",
       "headers": {
         "Content-Type": "application/json",
@@ -10,7 +10,7 @@
       "rateLimit": "1200/hour/ip"
     },
     "/epg/v1/programmes": {
-      "upstream": "https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1/programmes",
+      "upstream": "https://epg.2560801.xyz/epg/v1/programmes",
       "method": "GET",
       "headers": {
         "Accept": "application/json"
