@@ -39,3 +39,11 @@ test assertions enabled, resolve new warnings, and document any remaining
 warning with its reason and scope. Do not suppress a real security finding to
 obtain a passing check. Wait for required checks and independent review before
 merging; do not use an administrator bypass.
+
+## Workflow validator dependency
+
+The workflow validator installs PyYAML from
+`.github/requirements-workflow-contracts.txt` with `--require-hashes` and
+`--only-binary=:all:`. When updating the version, review its PyPI release and
+replace the SHA-256 wheel list for all supported Python/platform builds; do not
+remove hash verification. Run `scripts/workflow_contracts.py` with the new lock.
