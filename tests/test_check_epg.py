@@ -1,16 +1,19 @@
 """Operator smoke checks must use the bounded v1 API, never the old full feed."""
 import copy
+from email.message import Message
 import io
 import json
 from pathlib import Path
 import runpy
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
 
 EPG = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/check-epg.py"))
 check = EPG["check"]
+EpgHttpError = EPG["EpgHttpError"]
 
 
 class Response(io.BytesIO):
@@ -44,6 +47,8 @@ class EpgSmokeTests(unittest.TestCase):
         self.assertEqual(result["archived"], 1)
         self.assertEqual(result["current"], "Current")
         match, guide = self.requests
+        self.assertEqual(match.get_header("Cache-control"), "no-cache")
+        self.assertEqual(guide.get_header("Cache-control"), "no-cache")
         self.assertEqual(match.full_url, "https://player.example/epg/v1/match")
         self.assertEqual(json.loads(match.data), {"version": 1, "source": "epg-one", "channels": [
             {"id": "ren-hd", "tvgId": "hlsproxy-382", "tvgName": "", "name": "РЕН ТВ HD"}]})
@@ -68,6 +73,144 @@ class EpgSmokeTests(unittest.TestCase):
                      "https://player.example/path", "https://player.example?source=feed"):
             with self.subTest(base=base), self.assertRaisesRegex(ValueError, "HTTPS origin"):
                 check(base)
+
+    def test_rejects_stale_match_and_stale_programmes(self):
+        for response in (self.match, self.guide):
+            response["stale"] = True
+            with self.subTest(response=response), self.assertRaisesRegex(ValueError, "stale generation"):
+                self.run_check()
+            response["stale"] = False
+
+    def fail_check(self, status, headers, body, stage="match"):
+        self.requests = []
+        stream = io.BytesIO(body)
+        error = HTTPError("https://redirect.invalid/private?token=DO_NOT_LOG", status,
+                          "DO_NOT_LOG", headers, stream)
+        reads = []
+        original_read = error.read
+
+        def bounded_read(size):
+            reads.append(size)
+            return original_read(size)
+
+        error.read = bounded_read
+
+        def open_request(request, timeout):
+            self.requests.append(request)
+            self.assertEqual(timeout, 30)
+            if stage == "programmes" and request.get_method() == "POST":
+                return Response(self.match)
+            raise error
+
+        with patch.dict(check.__globals__, {"urlopen": open_request}):
+            with self.assertRaises(EpgHttpError) as raised:
+                check("https://player.example")
+        self.assertTrue(stream.closed)
+        self.assertNotIn("DO_NOT_LOG", str(raised.exception))
+        self.assertNotIn("redirect.invalid", str(raised.exception))
+        self.assertNotIn("opaque-generation", str(raised.exception))
+        self.assertLess(len(str(raised.exception)), 2048)
+        return raised.exception, reads
+
+    def test_match_403_reports_stage_without_retry_or_private_response_data(self):
+        headers = Message()
+        for key, value in {"Content-Type": "text/html; token=DO_NOT_LOG",
+                           "Server": "cloudflare", "Set-Cookie": "DO_NOT_LOG",
+                           "Authorization": "Bearer DO_NOT_LOG",
+                           "Location": "https://secret.invalid/?token=DO_NOT_LOG"}.items():
+            headers[key] = value
+        error, reads = self.fail_check(403, headers, b"<html>DO_NOT_LOG</html>")
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(reads, [])
+        self.assertEqual(error.diagnostic, {
+            "stage": "match", "method": "POST", "host": "player.example",
+            "path": "/epg/v1/match", "http_status": 403, "reason": "access_denied",
+            "headers": {"Content-Type": "text/html", "Server": "cloudflare"}})
+
+    def test_programmes_403_reports_original_path_without_query_or_retry(self):
+        error, _ = self.fail_check(403, {}, b"DO_NOT_LOG", stage="programmes")
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(error.diagnostic["stage"], "programmes")
+        self.assertEqual(error.diagnostic["method"], "GET")
+        self.assertEqual(error.diagnostic["path"], "/epg/v1/programmes")
+        self.assertNotIn("?", str(error))
+        self.assertNotIn("generation=", str(error))
+
+    def test_cloudflare_challenge_has_only_bounded_recognized_headers(self):
+        error, _ = self.fail_check(403, {
+            "Content-Type": "text/html", "Server": "cloudflare",
+            "CF-Ray": "a474af630ba32c2d-SJC", "CF-Mitigated": "challenge",
+            "Retry-After": "5", "CF-Access-Jwt-Assertion": "DO_NOT_LOG",
+        }, b"DO_NOT_LOG")
+        self.assertEqual(error.diagnostic["reason"], "access_denied")
+        self.assertEqual(error.diagnostic["headers"], {
+            "Content-Type": "text/html", "Server": "cloudflare",
+            "CF-Ray": "a474af630ba32c2d-SJC", "CF-Mitigated": "challenge", "Retry-After": "5"})
+
+    def test_json_readiness_and_generation_codes_are_recognized_without_raw_body(self):
+        for status, code, reason in ((503, "EPG_NOT_READY", "epg_not_ready"),
+                                     (409, "EPG_GENERATION", "epg_generation_changed")):
+            with self.subTest(status=status):
+                body = json.dumps({"version": 1, "source": "epg-one",
+                                   "error": {"code": code, "private": "DO_NOT_LOG"}}).encode()
+                error, reads = self.fail_check(status, {"Content-Type": "application/json"}, body)
+                self.assertEqual(error.diagnostic["epg_code"], code)
+                self.assertEqual(error.diagnostic["reason"], reason)
+                self.assertEqual(reads, [EPG["MAX_ERROR_RESPONSE_BYTES"] + 1])
+                self.assertEqual(len(self.requests), 1)
+
+    def test_error_code_parser_rejects_ambiguous_unknown_mismatched_and_large_json(self):
+        valid = {"version": 1, "source": "epg-one", "error": {"code": "EPG_NOT_READY"}}
+        bad_bodies = [
+            {**valid, "error": {"code": "DO_NOT_LOG"}},
+            {**valid, "source": "DO_NOT_LOG"},
+            {**valid, "version": True},
+            {**valid, "error": ["EPG_NOT_READY"]},
+            b'{"version":1,"source":"epg-one","error":{"code":"DO_NOT_LOG","code":"EPG_NOT_READY"}}',
+            b'{"version":1,"source":"epg-one","error":{"code":"EPG_NOT_READY"},"private":NaN}',
+            b'{"version":1,"source":"epg-one","error":{"code":"EPG_NOT_READY"},"private":"' + b"x" * 4096 + b'"}',
+            b'\xff',
+        ]
+        for body in bad_bodies:
+            if not isinstance(body, bytes):
+                body = json.dumps(body).encode()
+            with self.subTest(body_length=len(body)):
+                error, reads = self.fail_check(503, {"Content-Type": "application/json"}, body)
+                self.assertNotIn("epg_code", error.diagnostic)
+                self.assertEqual(error.diagnostic["reason"], "http_error")
+                self.assertEqual(reads, [4097])
+        error, _ = self.fail_check(403, {"Content-Type": "application/json"}, json.dumps(valid).encode())
+        self.assertNotIn("epg_code", error.diagnostic)
+        self.assertEqual(error.diagnostic["reason"], "access_denied")
+
+    def test_untrusted_oversized_duplicate_and_control_headers_are_omitted(self):
+        headers = Message()
+        headers["Content-Type"] = "application/json"
+        headers["Content-Type"] = "text/html"
+        headers["Server"] = "cloudflare;token=DO_NOT_LOG"
+        headers["CF-Ray"] = "a" * 1000
+        headers["CF-Mitigated"] = "challenge\r\nDO_NOT_LOG"
+        headers["Retry-After"] = "https://secret.invalid/?token=DO_NOT_LOG"
+        error, reads = self.fail_check(403, headers, b"DO_NOT_LOG")
+        self.assertEqual(error.diagnostic["headers"], {})
+        self.assertEqual(reads, [])
+
+    def test_retry_after_date_is_metadata_not_an_instruction_to_retry(self):
+        error, _ = self.fail_check(503, {"Retry-After": "Thu, 08 Oct 2026 11:06:35 GMT"}, b"")
+        self.assertEqual(error.diagnostic["headers"]["Retry-After"], "Thu, 08 Oct 2026 11:06:35 GMT")
+        self.assertEqual(len(self.requests), 1)
+
+    def test_http_failure_still_exits_nonzero_with_safe_cli_diagnostic(self):
+        path = str(Path(__file__).resolve().parents[1] / "scripts/check-epg.py")
+        error = HTTPError("https://secret.invalid/?token=DO_NOT_LOG", 403, "DO_NOT_LOG",
+                          {"Content-Type": "text/html"}, io.BytesIO(b"DO_NOT_LOG"))
+        with patch("sys.argv", [path, "https://player.example"]), patch("urllib.request.urlopen", side_effect=error) as opener:
+            with self.assertRaises(SystemExit) as raised:
+                runpy.run_path(path, run_name="__main__")
+        self.assertIsInstance(raised.exception.code, str)
+        self.assertIn('"reason":"access_denied"', raised.exception.code)
+        self.assertNotIn("DO_NOT_LOG", raised.exception.code)
+        self.assertEqual(opener.call_count, 1)
 
 
 if __name__ == "__main__":

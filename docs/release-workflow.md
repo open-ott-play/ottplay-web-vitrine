@@ -357,10 +357,33 @@ gh workflow run publish-herenow.yml --repo open-ott-play/ottplay-web-vitrine --r
   -f release_channel=beta
 ```
 
-The job preserves all existing production approval and artifact checks. Immediately
-before publication it now runs `check-epg.py` against the fixed backend origin;
-a cold, empty or incompatible generation fails the job before the player changes.
-After deployment, run the same smoke check against
-`https://player.ottplay.here.now` and complete the captured-browser acceptance.
-The pre-cutover network check cannot prove here.now proxy behavior until the
-preview/production routes are tested. It also does not replace LG measurement.
+Keep the direct-origin command above as a separate operator readiness check from
+an approved network. Cloudflare geographical restrictions can reject a hosted
+runner even when the EPG service is healthy; do not rerun to obtain a different
+IP or weaken those rules to pass a publication gate.
+
+The protected job preserves production approval, artifact checks and owner-version
+comparison. Immediately before and after publication it runs
+`python3 scripts/check-public-epg.py ./dist`. This first validates the prepared
+stock's exact proxy routes, methods, upstreams and rate limits, then checks the
+existing browser entry point `https://player.ottplay.here.now`. The upstream stays
+`https://epg.2560801.xyz`; changing it to the public site would create a proxy loop.
+This is the normal public client route, not a fallback after a direct-origin error.
+An existing, approved public EPG proxy is a prerequisite for this update workflow.
+First-time site or route provisioning requires a separate reviewed provisioning
+and preview-acceptance procedure; do not remove the guard to bootstrap a site.
+
+Both checks require matching generations, a current programme with description,
+archive rows and non-stale data. The publication wrapper also rejects a generation
+at least as old as the service's two-hour refresh period, or more than five minutes in the
+future. Requests ask caches to revalidate. HTTP failures stop the job without retry;
+bounded diagnostics identify the request stage, status and recognized response
+headers without logging queries, cookies or arbitrary response bodies.
+
+The pre-cutover check exercises the existing production routes; it cannot prove
+that the replacement manifest has been accepted. The mandatory post-publication
+check covers the newly published client route. A failure there means the site may
+already have changed: inspect authenticated owner state and publication receipts
+before recovery, and do not claim that publication was skipped. Complete the
+captured-browser and cache acceptance separately; none of these checks replaces
+physical LG measurement.

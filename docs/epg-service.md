@@ -154,6 +154,13 @@ must not be executed while the server-mode profile is live.
 ## Acceptance
 
 Run `python3 scripts/check-epg.py https://player.ottplay.here.now` after readiness.
+The protected publication workflow checks this same approved public client route
+before and after cutover using `scripts/check-public-epg.py ./dist`. It validates
+the exact staged proxy configuration before making requests and rejects stale,
+two-hour-old or far-future generations. A separate direct-origin readiness
+check belongs to the operator's approved network; hosted-runner geography must
+not require changing Cloudflare access rules. See the
+[publication contract](release-workflow.md#server-epg-cutover-using-the-next-qualified-beta).
 This names-only smoke check verifies generation binding, a current РЕН ТВ HD
 programme with description, and archive rows through the v1 proxy. It does not
 replace the following browser/TV acceptance:
