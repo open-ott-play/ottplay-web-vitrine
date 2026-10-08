@@ -1,0 +1,7 @@
+{
+  "name": "ottplay-epg-relay-native-tests",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": { "test": "workerd test config.capnp" },
+  "devDependencies": { "workerd": "1.20261008.1" }
+}

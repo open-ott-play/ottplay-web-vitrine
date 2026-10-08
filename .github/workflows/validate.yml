@@ -38,5 +38,7 @@ jobs:
           ref: 8cf033ed53b82c0c67b16359c8c431f99e111d04
           path: .ci-tools/herenow
           persist-credentials: false
+      - name: Install pinned native Worker runtime
+        run: npm ci --ignore-scripts --prefix deploy/epg-worker-vpc/runtime-tests
       - name: Run local checks
         run: bash scripts/ci.sh
