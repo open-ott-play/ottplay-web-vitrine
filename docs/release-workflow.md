@@ -161,6 +161,20 @@ total. Reaching a limit fails closed; it never silently prunes an old URL. Any
 future removal or changed publication controls requires a separate reviewed
 reconciliation, not an overwrite flag.
 
+The EPG VPC cutover is one such source-pinned reconciliation. Only
+`.herenow/proxy.json` may move from the accepted 805-byte manifest with SHA-256
+`87550dd655328bc6673319ad08e02bd7522b2578a9e41cd38699ea82f9832c94`
+at owner version `01M4DM24AZAX3JM60BTX7E2T5V` to the reviewed 853-byte manifest
+`95c077854bc77bdcab4b0c5956e7d3675b5571d2dfb314c222f6e8a789135798`.
+The change replaces only the two EPG upstream addresses. The wrapper verifies
+the predecessor's actual owner bytes and retains all other protected files.
+It records this transition in `changedPublicationControls`, separately from
+`protectedFiles`. An already migrated owner uses ordinary exact preservation.
+Any other version, byte identity, MIME type or additional control change fails;
+there is no user-supplied exception file or general migration switch. The usual
+owner-version comparison also guards finalization. If another publication moves
+the live version before this cutover, stop and review a new source-pinned plan.
+
 The wrapper seeds a private temporary `.herenow/state.json` with only that
 reviewed version, slug and absolute publication-copy path. This is the pinned
 publisher's supported mechanism for putting `baseVersionId` in the update PUT.
@@ -338,7 +352,7 @@ qualification, use a fresh publisher checkout at the reviewed merged revision:
 ```sh
 python3 scripts/prepare-dist.py "$ACCEPTED_BETA_TAG" "$ACCEPTED_BETA_MANIFEST_SHA256" beta
 python3 scripts/swop.py ./dist --runtime
-python3 scripts/check-epg.py https://epg.2560801.xyz
+python3 scripts/check-public-epg.py ./dist --upstream
 ```
 
 These are staging/verification commands, not publication. They preserve release
@@ -362,21 +376,22 @@ gh workflow run publish-herenow.yml --repo open-ott-play/ottplay-web-vitrine --r
   -f release_channel=beta
 ```
 
-Keep the direct-origin command above as a separate operator readiness check from
-an approved network. Cloudflare geographical restrictions can reject a hosted
-runner even when the EPG service is healthy; do not rerun to obtain a different
-IP or weaken those rules to pass a publication gate.
+Provision and qualify the separate [EPG VPC gateway](../deploy/epg-worker-vpc/)
+before changing the site. It exposes only the fixed programme API through the
+existing tunnel. The zone's legacy `epg.2560801.xyz` hostname and Bot Fight Mode
+are unchanged; there is no challenge retry, alternate-IP selection or browser
+impersonation. Do not point the gateway at the public site, which would loop.
 
 The protected job preserves production approval, artifact checks and owner-version
-comparison. Immediately before and after publication it runs
-`python3 scripts/check-public-epg.py ./dist`. This first validates the prepared
+comparison. Immediately before publication it runs
+`python3 scripts/check-public-epg.py ./dist --upstream`. This validates the
 stock's exact proxy routes, methods, upstreams and rate limits, then checks the
-existing browser entry point `https://player.ottplay.here.now`. The upstream stays
-`https://epg.2560801.xyz`; changing it to the public site would create a proxy loop.
-This is the normal public client route, not a fallback after a direct-origin error.
-An existing, approved public EPG proxy is a prerequisite for this update workflow.
-First-time site or route provisioning requires a separate reviewed provisioning
-and preview-acceptance procedure; do not remove the guard to bootstrap a site.
+fixed new gateway and its additional CLI `/current` operation. The old public
+route is allowed to be unhealthy during this repair; the new destination must
+pass before the switch. Immediately after publication the job runs
+`python3 scripts/check-public-epg.py ./dist` against
+`https://player.ottplay.here.now` to prove that the replacement proxy is active.
+Neither command accepts an arbitrary origin or falls back after a failure.
 
 Both checks require matching generations, a current programme with description,
 archive rows and non-stale data. The publication wrapper also rejects a generation
@@ -385,7 +400,7 @@ future. Requests ask caches to revalidate. HTTP failures stop the job without re
 bounded diagnostics identify the request stage, status and recognized response
 headers without logging queries, cookies or arbitrary response bodies.
 
-The pre-cutover check exercises the existing production routes; it cannot prove
+The pre-cutover check exercises the fixed new gateway; it cannot prove
 that the replacement manifest has been accepted. The mandatory post-publication
 check covers the newly published client route. A failure there means the site may
 already have changed: inspect authenticated owner state and publication receipts

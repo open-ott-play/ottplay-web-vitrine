@@ -157,10 +157,12 @@ class SwopPublicationTests(unittest.TestCase):
     def test_epg_routes_require_exact_upstreams_methods_and_limits(self):
         path = self.source / ".herenow/proxy.json"
         original = json.loads(path.read_text())
+        origin = SWOP["EPG_API_URL"].removesuffix("/epg/v1")
         for route, method in (("/epg/v1/match", "GET"), ("/epg/v1/programmes", "POST")):
             for field, value in (("method", method), ("upstream", "https://attacker.example/"),
-                                 ("upstream", "http://epg.2560801.xyz" + route),
-                                 ("upstream", "https://epg.2560801.xyz" + route + "?source=unreviewed"),
+                                 ("upstream", origin.replace("https:", "http:") + route),
+                                 ("upstream", origin + route + "?source=unreviewed"),
+                                 ("upstream", "https://epg.2560801.xyz" + route),
                                  ("headers", {"Authorization": "Bearer must-not-publish"}),
                                  ("rateLimit", "999999/hour/ip")):
                 changed = copy.deepcopy(original)

@@ -75,7 +75,8 @@ class OwnerReader:
         self.opener = request.build_opener(NoRedirect)
 
     def __call__(self, suffix, limit=MAX_INVENTORY_BYTES):
-        require(suffix in ("", "/files") or suffix.startswith("/files/hosted-runtime/"), "Unexpected owner endpoint")
+        require(suffix in ("", "/files", "/files/.herenow/proxy.json")
+                or suffix.startswith("/files/hosted-runtime/"), "Unexpected owner endpoint")
         try:
             req = request.Request(self.base + suffix, headers=self.headers, method="GET")
             with self.opener.open(req, timeout=30) as response:
@@ -151,12 +152,38 @@ def protected_mime(name):
     raise ValueError("Unexpected protected file type")
 
 
-def check_protected(stock, owner):
+# This is the one reviewed EPG-origin cutover, not a general reconciliation API.
+# Both byte identities and the previously accepted live version are pinned here.
+EPG_PROXY_PATH = ".herenow/proxy.json"
+EPG_PROXY_FROM_VERSION = "01M4DM24AZAX3JM60BTX7E2T5V"
+EPG_PROXY_FROM = {
+    "size": 805, "hash": "87550dd655328bc6673319ad08e02bd7522b2578a9e41cd38699ea82f9832c94",
+    "contentType": "application/json; charset=utf-8",
+}
+EPG_PROXY_TO = {
+    "size": 853, "hash": "95c077854bc77bdcab4b0c5956e7d3675b5571d2dfb314c222f6e8a789135798",
+    "contentType": "application/json; charset=utf-8",
+}
+
+
+def check_protected(stock, owner, expected_version, reader):
     expected = {name: {**item, "contentType": protected_mime(name)}
                 for name, item in stock["files"].items() if protected(name)}
-    require(expected and expected == {name: item for name, item in owner.items() if protected(name)},
+    current = {name: item for name, item in owner.items() if protected(name)}
+    if expected and expected == current:
+        return expected, {}
+    approved_cutover = (expected_version == EPG_PROXY_FROM_VERSION
+                        and current.get(EPG_PROXY_PATH) == EPG_PROXY_FROM
+                        and expected.get(EPG_PROXY_PATH) == EPG_PROXY_TO
+                        and (current | {EPG_PROXY_PATH: EPG_PROXY_TO}) == expected)
+    require(approved_cutover,
             "Owner demo, MSX or publication controls differ from the reviewed stock stage")
-    return expected
+    raw = reader("/files/" + EPG_PROXY_PATH, EPG_PROXY_FROM["size"])
+    require(len(raw) == EPG_PROXY_FROM["size"] and sha256(raw) == EPG_PROXY_FROM["hash"],
+            "Reviewed EPG proxy predecessor byte digest mismatch")
+    return ({name: value for name, value in expected.items() if name != EPG_PROXY_PATH},
+            {EPG_PROXY_PATH: {"from": current[EPG_PROXY_PATH], "to": expected[EPG_PROXY_PATH],
+                              "reviewedFromVersion": expected_version}})
 
 
 def graph_inventory(owner):
@@ -217,7 +244,7 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
         reader = OwnerReader(workspace, slug, key)
     checked_metadata(reader, expected_version, slug)
     owner = owner_inventory(reader, expected_version)
-    preserved = check_protected(stock, owner)
+    preserved, changed_controls = check_protected(stock, owner, expected_version, reader)
     groups = graph_inventory(owner)
     output.parent.mkdir(parents=True, exist_ok=True)
     created = False
@@ -268,6 +295,7 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
                         "source": str(stage), "publicationCopy": str(output), "stockSha256": sha256(canonical(stock)),
                         "ownerInventorySha256": sha256(canonical(owner)), "publicationSha256": sha256(canonical(final)),
                         "stockUnchanged": True, "exactUnionVerified": True, "protectedFiles": preserved,
+                        "changedPublicationControls": changed_controls,
                         "graphs": graph_records, "addedFiles": additions, "files": final["files"]}
             receipt.parent.mkdir(parents=True, exist_ok=True)
             with os.fdopen(os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as stream:
@@ -294,7 +322,8 @@ def main():
     except (ValueError, OSError, SystemExit) as exc:
         parser.exit(1, f"Publication copy refused: {exc}\n")
     print(json.dumps({"publicationCopy": evidence["publicationCopy"], "receipt": str(args.receipt.absolute()),
-                      "addedFiles": len(evidence["addedFiles"]), "publicationSha256": evidence["publicationSha256"]}))
+                      "addedFiles": len(evidence["addedFiles"]), "publicationSha256": evidence["publicationSha256"],
+                      "changedPublicationControls": evidence["changedPublicationControls"]}))
 
 
 if __name__ == "__main__":

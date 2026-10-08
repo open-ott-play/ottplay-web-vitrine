@@ -14,10 +14,14 @@ it does not execute our Rust process or schedule XMLTV processing.
 
 The service is external infrastructure: `Deployment/ottplay-epg` and
 `Service/ottplay-epg` in `synology-apps` on the ARM64 node `h7` in `k3s-heaven`.
-Cloudflare's h7 tunnel
-connects `epg.2560801.xyz` to the service. DNS and tunnel ingress have a separate infrastructure owner; publication of
-this repository alone does not provision them. Coordinate their changes through
-the operator's infrastructure runbook. The narrow `NetworkPolicy/ottplay-epg-egress` in
+The dedicated `ottplay-epg-api.igw-2560801.workers.dev` gateway uses one fixed
+Workers VPC Service through the existing h7 tunnel. It permits only the three
+EPG operations below; it cannot select another host, port or service.
+The [gateway module](../deploy/epg-worker-vpc/) has a separate reviewed plan and
+private state. Publishing the site does not provision it. The legacy
+`epg.2560801.xyz` ingress remains separately owned and subject to that zone's
+Bot Fight Mode and geographic rules. Those rules are not changed by this gateway.
+The narrow `NetworkPolicy/ottplay-epg-egress` in
 `cloudflared` permits the connector to reach that service. SWOP remains here.now
 Site Data, VPortal retains its fixed provider proxy, and command discovery is a
 separate optional bridge. None of these routes forwards video through EPG.
@@ -45,9 +49,9 @@ on the TV. Keep usable local programme data and show a bounded retry/error state
 ## Fixed routes and data contract
 
 - `POST /epg/v1/match` proxies only to
-  `https://epg.2560801.xyz/epg/v1/match`, with `1200/hour/ip`.
+  `https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1/match`, with `1200/hour/ip`.
 - `GET /epg/v1/programmes` proxies only to
-  `https://epg.2560801.xyz/epg/v1/programmes`, with `7200/hour/ip`.
+  `https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1/programmes`, with `7200/hour/ip`.
 
 These limits allow matching batches and guide navigation while bounding abuse;
 clients still coalesce duplicate requests and cache accepted results. There is
@@ -84,14 +88,16 @@ omitting it removes proxy routes. Inspect finalize warnings explicitly.
 
 ## Remote CLI programme search
 
-The control CLI uses `POST https://epg.2560801.xyz/epg/v1/current` directly for
+The control CLI uses `POST https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1/current` directly for
 configured `ott PLAYER p` queries. This separate route matches the player's
 channel metadata and selects current programmes from one server snapshot. The
 player does not load channel schedules for the command, and the CLI does not
 send its command-server access token to the EPG service. Title search is
 case-insensitive; channels without a current programme are omitted.
 
-This CLI route is allowed by the narrow Cloudflare ingress expression. It does
+Set only `epg.url` in the CLI configuration to
+`https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1`, retaining `source: "epg-one"`
+and all other settings. This CLI route is allowed by the fixed VPC gateway. It does
 not require another here.now proxy route or change the browser guide contract
 above. Deploy compatible control-server and player releases before configuring
 the CLI's public `epg-one` service. A failed query reports an error instead of
@@ -106,8 +112,9 @@ for receipt validation, metadata limits and provider matching.
    in `deploy/epg/ottplay-epg.yaml`. Record release/source/image identity; never
    restore the historical v1.1.43 pin.
 2. For initial provisioning, apply the dedicated Deployment, Service and
-   connector policy, and the exact DNS/ingress entries from the infrastructure
-   repository. For an existing installation, update only the image with a fresh
+   connector policy, then the separate fixed VPC gateway after reviewing its
+   plan. No new zone DNS or public tunnel ingress is needed for the gateway.
+   For an existing installation, update only the image with a fresh
    deployment identity/resource-version guard; preserve its configuration and
    service/network resources. Qualify
    the actual official ARM64 image on node `h7` during its initial
@@ -153,13 +160,13 @@ must not be executed while the server-mode profile is live.
 
 ## Acceptance
 
-Run `python3 scripts/check-epg.py https://player.ottplay.here.now` after readiness.
-The protected publication workflow checks this same approved public client route
-before and after cutover using `scripts/check-public-epg.py ./dist`. It validates
-the exact staged proxy configuration before making requests and rejects stale,
-two-hour-old or far-future generations. A separate direct-origin readiness
-check belongs to the operator's approved network; hosted-runner geography must
-not require changing Cloudflare access rules. See the
+Before cutover run `python3 scripts/check-public-epg.py ./dist --upstream`.
+This validates the exact staged configuration and checks all three operations
+on its fixed new gateway, including CLI current-programme queries. After
+publication the workflow runs `python3 scripts/check-public-epg.py ./dist`
+against the public browser route. Both reject stale, two-hour-old or far-future
+generations. They neither retry a challenge nor fall back to another origin.
+Legacy-origin failures are not a reason to weaken the zone's access rules. See the
 [publication contract](release-workflow.md#server-epg-cutover-using-the-next-qualified-beta).
 This names-only smoke check verifies generation binding, a current РЕН ТВ HD
 programme with description, and archive rows through the v1 proxy. It does not

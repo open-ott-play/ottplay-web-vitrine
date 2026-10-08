@@ -62,16 +62,13 @@ resource "cloudflare_worker_version" "epg" {
     content_type   = "application/javascript+module"
     content_base64 = filebase64(local.relay_source)
   }]
+  # The provider merges API readback by position before restoring binding order.
+  # Match the API's name order so rate-limit metadata cannot move to PUBLIC_HOST.
   bindings = concat([
     {
       name       = "BACKEND"
       type       = "vpc_service"
       service_id = cloudflare_connectivity_directory_service.epg.service_id
-    },
-    {
-      name = "PUBLIC_HOST"
-      type = "plain_text"
-      text = local.worker_hostname
     },
     ], [for route, name in local.limiter_names : {
       name         = name
@@ -81,7 +78,13 @@ resource "cloudflare_worker_version" "epg" {
         limit  = var.requests_per_minute[route]
         period = 60
       }
-  }])
+    }], [
+    {
+      name = "PUBLIC_HOST"
+      type = "plain_text"
+      text = local.worker_hostname
+    },
+  ])
 
   lifecycle {
     create_before_destroy = true

@@ -190,6 +190,27 @@ class RetainedRuntimeTests(unittest.TestCase):
 
 
 class OwnerReaderTests(unittest.TestCase):
+    def test_only_the_exact_proxy_predecessor_can_be_read_for_migration(self):
+        seen = []
+        class Response(io.BytesIO):
+            status = 200
+            def geturl(self):
+                return seen[-1].full_url
+        class Opener:
+            def open(self, req, timeout):
+                seen.append(req)
+                return Response(b"proxy-bytes")
+        reader = RETAIN.OwnerReader("ottplay", SLUG, "offline-secret")
+        reader.opener = Opener()
+        self.assertEqual(reader("/files/.herenow/proxy.json", 11), b"proxy-bytes")
+        self.assertEqual(seen[0].get_method(), "GET")
+        self.assertEqual(seen[0].full_url, reader.base + "/files/.herenow/proxy.json")
+        for path in ("/files/.herenow/data.json", "/files/.herenow/proxy.json?other=1",
+                     "/files/../.herenow/proxy.json", "/files/.herenow/proxy.json/extra"):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "endpoint"):
+                reader(path, 11)
+        self.assertEqual(len(seen), 1)
+
     def test_redirect_handler_refuses_every_target(self):
         handler = RETAIN.NoRedirect()
         self.assertIsNone(handler.redirect_request(None, None, 302, "redirect", {}, "https://untrusted.example/asset"))
