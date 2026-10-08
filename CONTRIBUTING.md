@@ -18,9 +18,15 @@ and project documentation.
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install PyYAML==6.0.3
+python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-workflow-contracts.txt
+git clone --filter=blob:none --no-checkout https://github.com/heredotnow/skill.git .ci-tools/herenow
+git -C .ci-tools/herenow checkout --detach 8cf033ed53b82c0c67b16359c8c431f99e111d04
 bash scripts/ci.sh
 ```
+
+The pinned publisher checkout is used by offline request-contract tests; these
+tests replace network clients and do not publish a site. For an existing checkout,
+verify its exact revision rather than cloning over it.
 
 This repository packages an independently accepted player artifact; it does not compile the player. Validation and local artifact preparation do not publish a site. Follow the release-workflow document for the separately authorized publication step.
 
@@ -47,3 +53,15 @@ The workflow validator installs PyYAML from
 `--only-binary=:all:`. When updating the version, review its PyPI release and
 replace the SHA-256 wheel list for all supported Python/platform builds; do not
 remove hash verification. Run `scripts/workflow_contracts.py` with the new lock.
+
+## Source releases
+
+Use immutable Semantic Versioning tags (`vMAJOR.MINOR.PATCH`) for source snapshots.
+The first source release is `v0.1.0`; do not move an existing release tag.
+These versions identify the preparation/publication tooling, static support assets, tests and documentation. They are independent of ottplay-foss player versions and do not contain a newly built player or publish the live site. The validation-only workflow policy and separately authorized deployment process remain applicable.
+
+Before tagging, identify the exact reviewed commit and verify its required CI
+checks. Each release must link that commit and describe changes, upgrade
+implications and security impact, including known limits. GitHub source archives
+allow users to obtain the exact tagged tree; preserve all bundled licenses and
+upstream notices. Report defects against the source tag or full commit ID.
