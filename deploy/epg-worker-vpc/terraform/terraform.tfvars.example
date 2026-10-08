@@ -1,0 +1,15 @@
+# Illustrative values only. Copy outside Git and replace every deployment identity.
+account_id        = "00000000000000000000000000000000"
+tunnel_id         = "00000000-0000-0000-0000-000000000000"
+workers_namespace = "existing-namespace"
+worker_name       = "ottplay-epg-api"
+backend_ipv4      = "192.0.2.10"
+backend_port      = 8080
+publish           = false
+
+# Check account-wide uniqueness before choosing IDs; these are examples.
+rate_namespace_ids = {
+  match      = "91001"
+  programmes = "91002"
+  current    = "91003"
+}
