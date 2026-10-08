@@ -48,6 +48,13 @@ run "private_by_default" {
     )
     error_message = "Require one fixed VPC service, one host and three rate limits; no network-wide or credential binding."
   }
+  assert {
+    condition = (
+      tolist([for binding in cloudflare_worker_version.epg.bindings : binding.name]) ==
+      sort([for binding in cloudflare_worker_version.epg.bindings : binding.name])
+    )
+    error_message = "Keep bindings in API name order so provider readback cannot merge nested fields into another binding."
+  }
 }
 
 run "explicit_publication" {

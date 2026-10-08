@@ -84,6 +84,15 @@ It does not adopt or modify the existing Alexa/Google relay. Observability,
 logpush, tail consumers, and preview URLs are disabled. `publish` defaults to
 `false`. Keep one state owner; do not manage this Worker separately with Wrangler.
 
+Keep bindings in alphabetical name order. Provider 5.24.0 merges readback fields
+by list position before restoring the configured order; mixed rate-limit and
+plain-text bindings can otherwise acquire an empty `simple` object and force
+repeated version replacements. The ordering contract is tested; no binding
+fields are ignored. When normalizing an already created installation, keep
+publication disabled, review the one-time version/deployment replacement, then
+require a refreshed no-change plan before reviewing the publication-only plan.
+See [provider issue #7345](https://github.com/cloudflare/terraform-provider-cloudflare/issues/7345).
+
 ## Offline verification
 
 From the repository root, with Node.js and Terraform installed:
