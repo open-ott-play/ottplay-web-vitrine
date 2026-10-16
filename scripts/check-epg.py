@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Check the bounded EPG v1 API and current/archived РЕН ТВ HD programmes."""
 import json
+import os
+import ssl
 import re
 import sys
 import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_opener
 
 
 SOURCE_ID = "epg-one"
@@ -24,9 +26,23 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
+
+
+def https_handler():
+    """Retain platform verification; optionally require stronger OpenSSL keys."""
+    context = ssl.create_default_context()
+    level = os.environ.get("OTTPLAY_TLS_SECURITY_LEVEL")
+    if level is not None:
+        if level not in ("2", "3", "4", "5"):
+            raise ValueError("OTTPLAY_TLS_SECURITY_LEVEL must be 2, 3, 4 or 5")
+        # A caller can raise the platform level, never lower a stricter one.
+        context.set_ciphers("DEFAULT:@SECLEVEL=" + str(max(int(level), context.security_level)))
+    return HTTPSHandler(context=context)
+
+
 # Keep every probe at the explicitly selected origin, including POST requests.
 # Retain a module-level binding so offline tests can replace only the transport.
-urlopen = build_opener(NoRedirect()).open
+urlopen = build_opener(NoRedirect(), https_handler()).open
 
 
 class EpgHttpError(Exception):

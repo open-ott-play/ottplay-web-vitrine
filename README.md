@@ -1,5 +1,7 @@
 # ottplay-web-vitrine
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15563/badge)](https://www.bestpractices.dev/projects/15563)
+
 Public **static** OttPlay FOSS web player hosted on [here.now](https://here.now).
 
 **Live demo:** https://player.ottplay.here.now/
@@ -217,3 +219,7 @@ MIT
 See [contribution and test requirements](CONTRIBUTING.md), the
 [security reporting policy](SECURITY.md), [security design](docs/security-design.md),
 and the [OpenSSF evidence and remaining criteria](docs/openssf-evidence.md).
+
+## Community and security evidence
+
+See [contributing](CONTRIBUTING.md), [governance](GOVERNANCE.md), the [Code of Conduct](CODE_OF_CONDUCT.md), [roadmap](ROADMAP.md) and [OpenSSF evidence](docs/openssf-evidence.md). The evidence index distinguishes supported security profiles, actual test results and remaining Silver requirements.

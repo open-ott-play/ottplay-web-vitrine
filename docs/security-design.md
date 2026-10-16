@@ -120,3 +120,41 @@ Assess version/release-note applicability for validation-only publication toolin
 
 Report new issues through [SECURITY.md](../SECURITY.md). An OpenSSF assessment
 records evidence and applicability; it is not a guarantee that a system is safe.
+
+## Complete strong-key publication profile
+
+The assessed configuration covers this repository's own preparation, owner
+inventory, EPG probe and publication tools. It does not confer a badge on the
+separately versioned player, streaming providers or device firmware.
+
+Use the verified GitHub CLI/Go profile above, an OpenSSL 3 curl, CPython 3.12+
+and HTTPS endpoints. For every preparation and publication invocation, set:
+
+```sh
+export GH_HOST=github.com
+export GODEBUG=fips140=on
+export OTTPLAY_TLS_SECURITY_LEVEL=3
+export OTTPLAY_CURL_SECURITY_LEVEL=3
+```
+
+The Python setting reaches both `OwnerReader` and the EPG acceptance helper.
+It accepts levels 2–5, rejects invalid values before network access and never
+lowers a stricter platform context. Level 3 requires at least 128-bit estimated
+security, including RSA/DH 3072 and EC 256. Normal CA/hostname checks stay on.
+It deliberately rejects RSA-2048 endpoints; arrange supported certificates
+before use. The compatibility default remains the normal context. Level 2
+alone is not an exact RSA-2048 guarantee because OpenSSL can round its strength
+estimate for a 2047-bit modulus.
+
+Use direct connections in this assessed profile, with HTTPS proxy variables
+unset and no custom endpoint, trust-store or GitHub Enterprise override. The
+publication wrapper forbids plaintext upload/finalization URLs. The pinned
+publisher's three stages have a positive RSA-3072 level-3 test; separate tests
+reject weak chains before data. Python tests independently cover a 2047-bit
+leaf, intermediate and unserved trust anchor over TLS 1.2 and TLS 1.3.
+
+The optional VPC relay uses the provider's authenticated binding to its local
+backend, and browser/player/service TLS is administered separately. A qualified
+source-tool configuration does not establish that a live site or remote service
+has been deployed with these settings. Existing site publication still requires
+the normal exact-artifact browser acceptance and operator approval.

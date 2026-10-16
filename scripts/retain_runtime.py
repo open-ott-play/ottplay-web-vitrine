@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import ssl
 from pathlib import Path, PurePosixPath
 import re
 import shutil
@@ -17,6 +18,20 @@ from urllib import error, parse, request
 from demo_media import verify_demo
 from msx import verify_msx
 from swop import GRAPH_ASSETS, GRAPH_PATH, runtime_graph, verify_swop, verify_swop_runtime
+
+
+
+def https_handler():
+    """Retain platform verification; optionally require stronger OpenSSL keys."""
+    context = ssl.create_default_context()
+    level = os.environ.get("OTTPLAY_TLS_SECURITY_LEVEL")
+    if level is not None:
+        if level not in ("2", "3", "4", "5"):
+            raise ValueError("OTTPLAY_TLS_SECURITY_LEVEL must be 2, 3, 4 or 5")
+        # A caller can raise the platform level, never lower a stricter one.
+        context.set_ciphers("DEFAULT:@SECLEVEL=" + str(max(int(level), context.security_level)))
+    return request.HTTPSHandler(context=context)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_FILES = 2000
@@ -72,7 +87,7 @@ class OwnerReader:
         self.base = "https://here.now/api/v1/publish/" + slug
         self.headers = {"Authorization": "Bearer " + key, "X-HereNow-Account": workspace,
                         "X-HereNow-Client": "ottplay-web-vitrine/retain-runtime"}
-        self.opener = request.build_opener(NoRedirect)
+        self.opener = request.build_opener(NoRedirect, https_handler())
 
     def __call__(self, suffix, limit=MAX_INVENTORY_BYTES):
         require(suffix in ("", "/files", "/files/.herenow/proxy.json")
