@@ -9,7 +9,7 @@ Upstream player builds: [`open-ott-play/ottplay-foss`](https://github.com/open-o
 <!-- ci-release-process:start -->
 ## CI and deployment
 
-See [CI and deployment workflow](docs/release-workflow.md) for required checks and local commands. This repository uses validation-only policy; application release channels do not apply.
+See [CI and deployment workflow](docs/release-workflow.md) for required checks and local commands. This repository validates and publishes an accepted upstream player release; it does not create application release tags. Publication uses the upstream beta or stable channel and requires [staged browser acceptance](docs/browser-acceptance.md).
 <!-- ci-release-process:end -->
 
 ## Why this exists
@@ -28,12 +28,11 @@ Yes — publish the static frontend to a stable here.now workspace URL and expli
 | here.now workspace `ottplay` | Hosts the Site at label **`player`** → `https://player.ottplay.here.now/` |
 | ottplay-foss releases | Source of truth for the built web bundle |
 
-```text
-accepted ottplay-foss release  →  verify and unpack ottplay-foss-dist.tar.gz
-                           →  add checksum-pinned static/demo/ media
-                           →  here.now publish (workspace ottplay)
-                           →  https://player.ottplay.here.now/
-```
+![Accepted release, staged candidate, real browser acceptance and protected exact-byte publication.](docs/images/staged-browser-process.svg)
+
+See [staged browser acceptance](docs/browser-acceptance.md) for the six scenarios,
+5/35-target channel policy, artifact verification and read-only qualification.
+
 
 ## Limits (static host)
 

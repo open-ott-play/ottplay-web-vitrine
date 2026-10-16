@@ -25,8 +25,12 @@ gh workflow run quality-gate.yml
 gh run list --workflow quality-gate.yml
 ```
 
-These checks cover the repository's syntax and workflow contracts. Browser
-playback and production deployment are separate checks.
+These checks cover the repository's syntax and workflow contracts. The publish
+workflow additionally runs [staged browser acceptance](browser-acceptance.md):
+five targets for beta, all 35 targets for stable staging. Its `qualify_only` input
+runs this acceptance without requesting production approval or publishing.
+Browser acceptance receives the exact prepared artifact that the protected
+production job later verifies and publishes.
 
 ## Publishing the player
 

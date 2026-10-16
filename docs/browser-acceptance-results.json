@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "date": "2026-10-15",
+  "scope": "local adapter development; not hosted release qualification or publication",
+  "fixtureVersion": "1.1.54-beta.12",
+  "stagedFileCount": 390,
+  "adapterSha256": "27c5e3688bdf5a2058db73e5cf167aabdb60f84fd1cbe31a5a9d9254e42841de",
+  "results": [
+    {
+      "engine": "chromium",
+      "platform": "darwin",
+      "playwrightVersion": "1.64.0",
+      "browserVersion": "156.0.8078.4",
+      "testsPassed": 6,
+      "testsFailed": 0,
+      "scenarios": [
+        "staged-player-boots-with-hosted-configuration",
+        "versioned-hosted-resources-load-from-the-staged-site",
+        "staged-epg-worker-executes-and-closes-cleanly",
+        "staged-demo-video-decodes-and-advances",
+        "remote-input-rejects-invalid-pairing-without-a-network-write",
+        "remote-input-supports-mobile-layout-and-keyboard"
+      ]
+    },
+    {
+      "engine": "firefox",
+      "platform": "darwin",
+      "playwrightVersion": "1.64.0",
+      "browserVersion": "157.0",
+      "testsPassed": 6,
+      "testsFailed": 0,
+      "scenarios": [
+        "staged-player-boots-with-hosted-configuration",
+        "versioned-hosted-resources-load-from-the-staged-site",
+        "staged-epg-worker-executes-and-closes-cleanly",
+        "staged-demo-video-decodes-and-advances",
+        "remote-input-rejects-invalid-pairing-without-a-network-write",
+        "remote-input-supports-mobile-layout-and-keyboard"
+      ]
+    },
+    {
+      "engine": "webkit",
+      "platform": "darwin",
+      "playwrightVersion": "1.64.0",
+      "browserVersion": "27.2",
+      "testsPassed": 6,
+      "testsFailed": 0,
+      "scenarios": [
+        "staged-player-boots-with-hosted-configuration",
+        "versioned-hosted-resources-load-from-the-staged-site",
+        "staged-epg-worker-executes-and-closes-cleanly",
+        "staged-demo-video-decodes-and-advances",
+        "remote-input-rejects-invalid-pairing-without-a-network-write",
+        "remote-input-supports-mobile-layout-and-keyboard"
+      ]
+    },
+    {
+      "engine": "chromium",
+      "platform": "darwin",
+      "playwrightVersion": "1.63.0",
+      "browserVersion": "153.0.8010.12",
+      "testsPassed": 6,
+      "testsFailed": 0,
+      "scenarios": [
+        "staged-player-boots-with-hosted-configuration",
+        "versioned-hosted-resources-load-from-the-staged-site",
+        "staged-epg-worker-executes-and-closes-cleanly",
+        "staged-demo-video-decodes-and-advances",
+        "remote-input-rejects-invalid-pairing-without-a-network-write",
+        "remote-input-supports-mobile-layout-and-keyboard"
+      ]
+    },
+    {
+      "engine": "webkit",
+      "platform": "darwin",
+      "playwrightVersion": "1.62.1",
+      "browserVersion": "26.5",
+      "testsPassed": 6,
+      "testsFailed": 0,
+      "scenarios": [
+        "staged-player-boots-with-hosted-configuration",
+        "versioned-hosted-resources-load-from-the-staged-site",
+        "staged-epg-worker-executes-and-closes-cleanly",
+        "staged-demo-video-decodes-and-advances",
+        "remote-input-rejects-invalid-pairing-without-a-network-write",
+        "remote-input-supports-mobile-layout-and-keyboard"
+      ]
+    }
+  ]
+}

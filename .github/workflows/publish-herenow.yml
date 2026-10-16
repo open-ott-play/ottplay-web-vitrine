@@ -1,5 +1,5 @@
 name: Publish here.now
-run-name: 'Publish ${{ inputs.tag }} · ${{ inputs.manifest_sha256 }} · from ${{ inputs.expected_version_id }}'
+run-name: "Publish ${{ inputs.tag }} \xB7 ${{ inputs.manifest_sha256 }} \xB7 from ${{ inputs.expected_version_id }}"
 'on':
   workflow_dispatch:
     inputs:
@@ -23,26 +23,87 @@ run-name: 'Publish ${{ inputs.tag }} · ${{ inputs.manifest_sha256 }} · from ${
         options:
         - stable
         - beta
+      qualify_only:
+        description: Verify staged bytes and browsers without publishing or requesting production approval
+        required: false
+        type: boolean
+        default: false
 concurrency:
   group: ottplay-web-vitrine-production
   cancel-in-progress: false
 jobs:
+  prepare:
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.qualify_only || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.candidate.outputs.artifact-id }}
+      manifest-sha256: ${{ steps.pack.outputs.manifest-sha256 }}
+    steps:
+    - &id001
+      name: Harden the runner (Audit all outbound calls)
+      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25
+      with:
+        egress-policy: audit
+    - &id002
+      name: Checkout exact source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - name: Download and verify accepted release bytes
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE_TAG: ${{ inputs.tag }}
+        RELEASE_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+        RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      run: python3 scripts/prepare-dist.py "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256" "$RELEASE_CHANNEL"
+    - name: Seal the exact staged website
+      id: pack
+      env:
+        RELEASE_TAG: ${{ inputs.tag }}
+        RELEASE_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+        RELEASE_CHANNEL: ${{ inputs.release_channel }}
+      run: python3 scripts/browser_candidate.py pack dist browser-candidate "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256" "$RELEASE_CHANNEL"
+    - name: Preserve the exact staged website
+      id: candidate
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: staged-vitrine-${{ github.run_attempt }}
+        path: browser-candidate/
+        if-no-files-found: error
+        retention-days: 7
+  browser:
+    needs:
+    - prepare
+    permissions:
+      contents: read
+      actions: read
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/typescript-ci.yml@eb1ec3a1b978923955c77b478c9a2530846d6bae
+    with:
+      force-full: true
+      run-node-ci: false
+      browser-matrix-file: .github/browser-compatibility.json
+      browser-extended: ${{ inputs.release_channel == 'stable' }}
+      browser-release-channel: ${{ inputs.release_channel }}
+      browser-artifact-id: ${{ needs.prepare.outputs.artifact-id }}
+      browser-artifact-path: browser-candidate
+      browser-evidence-prefix: staged-vitrine-browser
+      browser-prepare-command: bash scripts/prepare-browser-candidate.sh "${{ needs.prepare.outputs.manifest-sha256
+        }}"
+      browser-test-command: node scripts/browser-acceptance.cjs
   publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
     steps:
-    - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
-      with:
-        egress-policy: audit
-
-    - name: Checkout exact source
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-        ref: ${{ github.sha }}
+    - *id001
+    - *id002
     - name: Require protected production approval
       env:
         GH_TOKEN: ${{ github.token }}
@@ -51,13 +112,16 @@ jobs:
       env:
         HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
       run: ': "${HERENOW_API_KEY:?Configure production environment credentials before publishing}"'
-    - name: Download and verify accepted release bytes
+    - name: Download the browser-accepted staged website
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+        path: browser-candidate
+        merge-multiple: true
+    - name: Verify source, run, attempt and all accepted site bytes
       env:
-        GH_TOKEN: ${{ github.token }}
-        RELEASE_TAG: ${{ inputs.tag }}
-        RELEASE_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
-        RELEASE_CHANNEL: ${{ inputs.release_channel }}
-      run: python3 scripts/prepare-dist.py "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256" "$RELEASE_CHANNEL"
+        CANDIDATE_MANIFEST_SHA256: ${{ needs.prepare.outputs.manifest-sha256 }}
+      run: python3 scripts/browser_candidate.py unpack browser-candidate dist "$CANDIDATE_MANIFEST_SHA256"
     - name: Checkout pinned publishing dependency
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
@@ -78,10 +142,13 @@ jobs:
       run: bash scripts/publish-herenow.sh ./dist
     - name: Verify public EPG generation after publication
       run: python3 scripts/check-public-epg.py ./dist
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: ${{ !inputs.qualify_only && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
       }}
     environment: production
     timeout-minutes: 30
+    needs:
+    - prepare
+    - browser
 permissions:
   contents: read
   actions: read
