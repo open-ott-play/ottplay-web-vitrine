@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Document project governance, confidential conduct reporting, maintenance continuity limits and reviewed OpenSSF evidence.
+- Add an optional stronger Python TLS profile that preserves CA/hostname verification and cannot lower host security settings; test exact weak-key boundaries before credentials are sent.
+
+## Unreleased
+
 ### Security
 
 - Enforce TLS 1.2+ and OpenSSL security level 2+ for every pinned publisher curl

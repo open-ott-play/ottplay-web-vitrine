@@ -51,7 +51,7 @@ def certificates(directory, weak):
     def key(name, bits):
         openssl(directory, "genpkey", "-algorithm", "RSA", "-pkeyopt",
                 f"rsa_keygen_bits:{bits}", "-out", name + ".key")
-    key("root", 1024 if weak == "root" else 2048)
+    key("root", 1024 if weak == "root" else 3072 if weak == "strict" else 2048)
     openssl(directory, "req", "-new", "-x509", "-sha256", "-days", "1", "-key", "root.key",
             "-out", "root.pem", "-subj", "/CN=Synthetic root", "-addext",
             "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign")
@@ -66,7 +66,7 @@ def certificates(directory, weak):
                 "-CAkey", "root.key", "-set_serial", "2", "-days", "1", "-sha256",
                 "-extfile", "intermediate.ext", "-out", "intermediate.pem")
         issuer = "intermediate"
-    key("leaf", 1024 if weak == "leaf" else 2048)
+    key("leaf", 1024 if weak == "leaf" else 3072 if weak == "strict" else 2048)
     openssl(directory, "req", "-new", "-key", "leaf.key", "-out", "leaf.csr",
             "-subj", "/CN=here.now")
     (directory / "leaf.ext").write_text(
@@ -103,7 +103,7 @@ class PublishTlsTests(unittest.TestCase):
         cls.addClassCleanup(cls.temporary.cleanup)
         cls.root = Path(cls.temporary.name)
         cls.chains = {}
-        for name in ("strong", "leaf", "intermediate", "root"):
+        for name in ("strong", "strict", "leaf", "intermediate", "root"):
             directory = cls.root / name
             directory.mkdir()
             cls.chains[name] = certificates(directory, name)
@@ -228,6 +228,12 @@ class PublishTlsTests(unittest.TestCase):
                         result, requests = self.publish(weak=weak, stage=stage, tls=tls)
                         self.assertNotEqual(result.returncode, 0)
                         self.assertEqual(len(requests), expected_count, result.stderr)
+
+    def test_level_three_completes_all_publisher_stages(self):
+        for tls in (ssl.TLSVersion.TLSv1_2, ssl.TLSVersion.TLSv1_3):
+            result, requests = self.publish(weak="strict", tls=tls, level="3")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len(requests), 3)
 
     def test_stricter_level_three_rejects_rsa2048_before_authentication(self):
         result, requests = self.publish(level="3")

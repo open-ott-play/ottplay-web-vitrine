@@ -1,43 +1,31 @@
-# OpenSSF Passing evidence
+# OpenSSF Best Practices evidence
 
-This is a source-backed work record for the [OpenSSF Best Practices Passing
-criteria](https://www.bestpractices.dev/en/criteria/0). It does not assert that a
-badge has been awarded. The partial [machine-readable assessment](../.bestpractices.json)
-leaves unverified criteria unknown.
+This evidence index supports the project's own Passing and Silver self-assessments. The public badge service is authoritative for awarded status. A planned or partially completed criterion is not an award.
 
-## Available evidence
+## Project, participation and releases
 
-- Purpose, installation and operating limitations: [README](../README.md).
-- Public Git source, commit history and change proposals: [open-ott-play/ottplay-web-vitrine](https://github.com/open-ott-play/ottplay-web-vitrine).
-- Bug reports and retained discussion: [issues](https://github.com/open-ott-play/ottplay-web-vitrine/issues).
-- Contribution requirements, test policy and test invocation: [CONTRIBUTING](../CONTRIBUTING.md).
-- Private reporting process and response policy: [SECURITY](../SECURITY.md).
-- Trust boundaries, source references and negative-test evidence: [security design](security-design.md).
-- Build/test automation: [workflow](../.github/workflows/validate.yml) and [actual run results](https://github.com/open-ott-play/ottplay-web-vitrine/actions).
-- Project license: [MIT](../LICENSE); third-party terms still apply.
+Original Python/Shell preparation and publication tools, browser support assets and integration definitions. Separately released upstream player binaries retain their own identity; this assessment does not award a badge to them.
 
-## Initial scanner inventory — 2026-10-08
+The [README](../README.md) explains installation and interfaces. [CONTRIBUTING](../CONTRIBUTING.md) gives the issue/PR process, standards, test commands and review policy. [GOVERNANCE](../GOVERNANCE.md), [Code of Conduct](../CODE_OF_CONDUCT.md) and [ROADMAP](../ROADMAP.md) record roles, private conduct reporting, priorities and the missing backup-maintainer arrangement. Source is public Git under [MIT](../LICENSE), with third-party notices preserved.
 
-The authenticated GitHub inventory found 9 open code-scanning alerts
-(including Scorecard policy findings) and 0 open Dependabot alerts.
-This is a dated baseline, not a statement about the post-merge state. A scanner
-configuration error or disabled scanner must not be recorded as zero findings.
-Check [Code scanning](https://github.com/open-ott-play/ottplay-web-vitrine/security/code-scanning) and
-[Dependabot](https://github.com/open-ott-play/ottplay-web-vitrine/security/dependabot) after the changed default branch is
-analyzed.
+The latest reviewed stable source/release is [v0.1.0](https://github.com/open-ott-play/ottplay-web-vitrine/releases/tag/v0.1.0); its human-readable notes describe changes, upgrade implications, security scope and exact source. [RELEASING](../RELEASING.md) and [CHANGELOG](../CHANGELOG.md) define future release expectations. This work does not deploy a device or publish a new stable release.
 
-## Unresolved criteria and applicability
+## Testing and analysis
 
-Assess version/release-note applicability for validation-only publication tooling separately from upstream player versions, and verify delivery/signature and dynamic-analysis evidence.
+The standard suite exercises archive safety, provenance, immutable graph retention, compare-and-swap publication and synthetic network responses. New real TLS tests cover both Python readers and a complete three-stage publisher transaction at security level 3. The native Worker runtime also tests the VPC binding boundaries. See the current pull-request checks for exact revision results.
 
-The project maintainer must confirm secure-design/common-error knowledge for
-this project and supply the history of bug, enhancement and vulnerability
-reports across all channels. Confirm actual private-reporting availability and
-review/branch settings. Verify releases have meaningful change/security notes;
-measure test coverage and map static/dynamic analysis to every project-owned
-language. Review each cryptographic criterion individually. Do not transfer
-another repository's attestations, badge identifier or test results here.
+The [test sources](../tests), [CI workflows](../.github/workflows), [quality limits](quality.md) and [security policy](../SECURITY.md) retain the exact commands and scope. Automated tests execute with assertions. Required analysis includes CodeQL on the maintained languages; practical language/syntax checks remain enabled. New confirmed findings must be fixed or narrowly explained, never hidden by disabling a gate.
 
-Record each completed analysis with its source SHA, commands/tool versions,
-result and material limitations. Add the repository's actual badge only after
-its own public assessment is saved and verified.
+No dedicated mutation fuzzer is currently claimed for this tooling project. Real network/regression tests are not described as fuzzing.
+
+## Security and human evidence
+
+[The security design/profile](../docs/security-design.md) documents active trust boundaries, default behavior and the complete supported strong-key configuration. Crypto claims apply to that configuration; they do not certify arbitrary third-party infrastructure or deployment settings.
+
+On 16 October 2026 the authenticated issue/advisory inventory contained no non-PR issues or advisories, and Dependabot contained no open alerts. Visible code-scanning findings were Scorecard process findings; an empty advisory inventory is not a claim that no vulnerability can exist. Private GitHub reporting was enabled. The available Git history scan found no credential matches.
+
+The maintainer's secure-design/common-vulnerability knowledge and no outside-GitHub reports in the preceding 12 months are recorded in [quality limits](quality.md). These are human statements; they are not inferred from test results.
+
+## Honest Silver progress
+
+No backup person or tested one-week recovery arrangement exists, so access continuity and bus factor remain unmet. Complete cross-language statement coverage, systematic accessibility/internationalization, independent penetration testing and a full assurance case are not established. See [quality limits](quality.md); individual criteria remain separately assessed.
