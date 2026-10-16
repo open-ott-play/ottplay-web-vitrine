@@ -18,7 +18,7 @@ and project documentation.
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-workflow-contracts.txt
+python -m pip install --require-hashes --only-binary=:all: -r .github/requirements-workflow-contracts.txt -r .github/requirements-lint.txt
 git clone --filter=blob:none --no-checkout https://github.com/heredotnow/skill.git .ci-tools/herenow
 git -C .ci-tools/herenow checkout --detach 8cf033ed53b82c0c67b16359c8c431f99e111d04
 bash scripts/ci.sh
@@ -77,3 +77,11 @@ See [governance](GOVERNANCE.md), the [Code of Conduct](CODE_OF_CONDUCT.md), [roa
 ## Python quality diagnostics
 
 Install `.github/requirements-lint.txt` with `python3 -m pip install --require-hashes --only-binary=:all: -r .github/requirements-lint.txt`, then run `python3 -m ruff check --select E9,F63,F7,F82 scripts tests`. CI runs these practical error checks; they complement the vulnerability analysis.
+
+The maintainer updates the repository front page to link newly recognized project achievements within 48 hours. The OpenSSF image links directly to this project's live assessment and updates with its awarded level. Do not copy another project's achievement.
+
+For JavaScript, use the file's ESM/CommonJS format consistently, two-space indentation, semicolons and strict equality; keep compatibility-oriented upstream styles intact. HCL follows `terraform fmt` and its module variable/output conventions. These supplement PEP 8 for Python, `gofmt`/Effective Go for Go, and quoted expansions in Bash.
+
+## Removing a development installation
+
+These tools run from the checkout and its virtual environment; they do not register a system service. Deactivate the environment, retain any private publication configuration or accepted artifacts you need, then remove the dedicated environment and checkout. That removes the local development installation and does not delete a published site. Deleting a remote deployment is a separate hosting operation requiring the owner’s authorization.
