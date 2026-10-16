@@ -86,6 +86,20 @@ class CandidateTests(unittest.TestCase):
                 self.assertFalse(CANDIDATE.safe_name(name))
         self.assertTrue(CANDIDATE.safe_name(".well-known/a.json"))
 
+    def test_size_limit_is_checked_before_reading_file_contents(self):
+        with patch.object(CANDIDATE, "MAX_BYTES", 1), patch.object(CANDIDATE, "digest") as digest:
+            with self.assertRaisesRegex(ValueError, "size limit"):
+                self.pack()
+            digest.assert_not_called()
+
+    def test_entry_limit_stops_directory_iteration_early(self):
+        def entries(_root, _pattern):
+            for _ in range(3):
+                yield self.source / ".well-known"
+            raise AssertionError("Inventory consumed entries after the bound")
+        with patch.object(CANDIDATE, "MAX_FILES", 1), patch.object(Path, "rglob", entries), self.assertRaisesRegex(ValueError, "directory entry limit"):
+            self.pack()
+
     def test_unsafe_member_is_rejected_even_with_a_matching_archive_digest(self):
         self.pack()
         with tarfile.open(self.bundle / "site.tar.gz", "w:gz") as tar:

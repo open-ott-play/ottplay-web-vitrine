@@ -21,7 +21,11 @@ def require(condition, message):
 
 
 def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    result = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            result.update(chunk)
+    return result.hexdigest()
 
 
 def identity():
@@ -41,22 +45,27 @@ def safe_name(value):
 
 def inventory(root):
     require(root.is_dir() and not root.is_symlink(), "Site must be a real directory")
-    files = []
-    for path in sorted(root.rglob("*")):
+    files, total = [], 0
+    for entries, path in enumerate(root.rglob("*"), start=1):
+        require(entries <= MAX_FILES * 2, "Site exceeds directory entry limit")
         require(not path.is_symlink(), "Site must not contain symbolic links")
         if path.is_dir():
             continue
         require(path.is_file(), "Site contains a non-regular file")
         relative = path.relative_to(root).as_posix()
         require(safe_name(relative), "Site contains a non-portable path")
+        require(len(files) < MAX_FILES, "Invalid site file count")
+        size = path.stat().st_size
+        total += size
+        require(total <= MAX_BYTES, "Site exceeds size limit")
         files.append({"path": relative,
-                      "size": path.stat().st_size, "sha256": digest(path)})
+                      "size": size, "sha256": digest(path)})
     require(0 < len(files) <= MAX_FILES, "Invalid site file count")
     require(sum(item["size"] for item in files) <= MAX_BYTES, "Site exceeds size limit")
     require(len({item["path"].casefold() for item in files}) == len(files),
             "Site contains case-colliding paths")
     require(any(item["path"] == "index.html" for item in files), "Site lacks index.html")
-    return files
+    return sorted(files, key=lambda item: item["path"])
 
 
 def pack(source, output, tag, manifest_digest, channel):
@@ -103,7 +112,8 @@ def unpack(candidate, destination, expected_digest):
                         and member.name.casefold() not in names, "Unsafe or duplicate archive member")
                 names.add(member.name.casefold())
                 total += member.size
-                require(len(names) <= MAX_FILES and total <= MAX_BYTES, "Candidate exceeds size limit")
+                require(0 <= member.size <= MAX_BYTES and len(names) <= MAX_FILES
+                        and total <= MAX_BYTES, "Candidate exceeds size limit")
                 target = temporary.joinpath(*name.parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with tar.extractfile(member) as src, target.open("xb") as dst:
