@@ -130,9 +130,23 @@ class StrictTlsTests(unittest.TestCase):
                     self.assertGreaterEqual(context.minimum_version, ssl.TLSVersion.TLSv1_2)
                 with patch.dict(os.environ, {"OTTPLAY_TLS_SECURITY_LEVEL": "2"}):
                     strict = ssl.create_default_context()
-                    strict.set_ciphers("DEFAULT:@SECLEVEL=3")
-                    with patch.object(module.ssl, "create_default_context", return_value=strict):
+                    strict.set_ciphers("ECDHE-RSA-AES128-GCM-SHA256:@SECLEVEL=3")
+                    original = strict.get_ciphers()
+                    with patch.object(module.ssl, "create_default_context", return_value=strict), \
+                            patch.object(strict, "set_ciphers", wraps=strict.set_ciphers) as change:
                         self.assertEqual(module.https_handler()._context.security_level, 3)
+                        self.assertEqual(strict.get_ciphers(), original)
+                        change.assert_not_called()
+                with patch.dict(os.environ, {"OTTPLAY_TLS_SECURITY_LEVEL": "3"}):
+                    selected = ssl.create_default_context()
+                    selected.set_ciphers("ECDHE-RSA-AES128-GCM-SHA256:@SECLEVEL=2")
+                    selected.minimum_version = ssl.TLSVersion.TLSv1_3
+                    original = selected.get_ciphers()
+                    with patch.object(module.ssl, "create_default_context", return_value=selected):
+                        result = module.https_handler()._context
+                        self.assertEqual(result.security_level, 3)
+                        self.assertEqual(result.minimum_version, ssl.TLSVersion.TLSv1_3)
+                        self.assertEqual(result.get_ciphers(), original)
 
     @staticmethod
     def modules():
