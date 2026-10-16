@@ -8,7 +8,7 @@
   ],
   "notes": [
     "Validation-only policy: no synthetic beta/RC artifacts or tag-triggered stable releases.",
-    "Syntax baseline only: YAML/JSON/Python/shell/JavaScript where present. No application tests, browser playback, cluster rendering or deployment checks implied."
+    "Source validation includes syntax and deployment contract tests. The publish workflow separately qualifies exact staged bytes in real browsers before protected publication; qualify_only never publishes."
   ],
   "visibility": "public",
   "single_entry_ci": true,

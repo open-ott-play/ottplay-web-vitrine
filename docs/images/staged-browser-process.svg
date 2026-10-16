@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="640" viewBox="0 0 1120 640" role="img" aria-labelledby="title desc">
+  <title id="title">From accepted player release to browser-checked publication</title>
+  <desc id="desc">Verify the accepted release, stage the website, seal an immutable candidate, test its exact bytes, then publish after production approval. Read-only qualification stops before publication.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0b1730"/><stop offset="1" stop-color="#172b48"/></linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a9c6"/></marker>
+  </defs>
+  <rect width="1120" height="640" rx="24" fill="url(#bg)"/>
+  <g font-family="system-ui, sans-serif">
+    <text x="48" y="60" fill="#77e4cf" font-size="15" font-weight="700" letter-spacing="2">OTT-PLAY · STAGED WEBSITE ACCEPTANCE</text>
+    <text x="48" y="108" fill="#fff" font-size="32" font-weight="700">Test the bytes that will be published</text>
+    <text x="48" y="140" fill="#c0cfe2" font-size="17">A release receipt starts the process. Browser evidence protects the final staged website.</text>
+    <g stroke="#94a9c6" stroke-width="3" fill="none" marker-end="url(#arrow)">
+      <path d="M 350 252 H 405"/><path d="M 715 252 H 770"/><path d="M 925 320 V 373"/><path d="M 775 450 H 722"/><path d="M 412 450 H 359"/>
+    </g>
+    <rect x="48" y="195" width="302" height="125" rx="16" fill="#143f61" stroke="#52b7f9"/>
+    <rect x="412" y="195" width="303" height="125" rx="16" fill="#203c57" stroke="#78b3e9"/>
+    <rect x="777" y="195" width="295" height="125" rx="16" fill="#164e4b" stroke="#65ddc0"/>
+    <rect x="777" y="380" width="295" height="140" rx="16" fill="#3b2d63" stroke="#bf9dff"/>
+    <rect x="412" y="380" width="303" height="140" rx="16" fill="#574321" stroke="#f4c572"/>
+    <rect x="48" y="380" width="302" height="140" rx="16" fill="#164c42" stroke="#68dcb0"/>
+    <g fill="#fff" font-size="21" font-weight="700">
+      <text x="70" y="234">1 · Verify release</text><text x="434" y="234">2 · Stage website</text><text x="799" y="234">3 · Seal candidate</text>
+      <text x="799" y="420">4 · Run real browsers</text><text x="434" y="420">5 · Approve production</text><text x="70" y="420">6 · Publish exact bytes</text>
+    </g>
+    <g fill="#dfebf8" font-size="16">
+      <text x="70" y="266">Accepted manifest + source</text><text x="70" y="291">Immutable release checks</text>
+      <text x="434" y="266">Player + demo + MSX + SWOP</text><text x="434" y="291">Versioned hosted EPG runtime</text>
+      <text x="799" y="266">Artifact ID + manifest SHA-256</text><text x="799" y="291">Source, run and attempt bound</text>
+      <text x="799" y="455">Beta: 5 · Stable staging: 35</text><text x="799" y="482">Every target must pass</text>
+      <text x="434" y="455">Default branch + protected job</text><text x="434" y="482">Expected live version required</text>
+      <text x="70" y="455">Recheck every staged file</text><text x="70" y="482">EPG checks before and after</text>
+    </g>
+    <rect x="48" y="557" width="1024" height="44" rx="12" fill="#263c59"/>
+    <text x="70" y="585" fill="#e0edf9" font-size="17">qualify_only = true → steps 1–4 only; no production credentials, approval request or publication.</text>
+  </g>
+</svg>

@@ -16,3 +16,7 @@ __pycache__/
 
 .ci-tools/
 node_modules/
+
+# Browser acceptance diagnostics and staged candidates
+.compatibility/
+browser-candidate/
