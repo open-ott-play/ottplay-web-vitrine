@@ -1,5 +1,11 @@
 # ottplay-web-vitrine
 
+[![OTT-play FOSS channel browser in perspective](docs/images/hero.png)](docs/images/studio-2026-default.png)
+
+*Illustrative Studio 2026 screenshot from the upstream FOSS player, using synthetic
+channel and programme fixtures. The deployed web build may differ.
+[Original and image provenance](docs/images/README.md).*
+
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15563/badge)](https://www.bestpractices.dev/projects/15563)
 
 Public **static** OttPlay FOSS web player hosted on [here.now](https://here.now).
