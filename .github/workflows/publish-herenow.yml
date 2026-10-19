@@ -1,5 +1,5 @@
 name: Publish here.now
-run-name: "Publish ${{ inputs.tag }} \xB7 ${{ inputs.manifest_sha256 }} \xB7 from ${{ inputs.expected_version_id }}"
+run-name: "Publish ${{ inputs.tag }} · ${{ inputs.manifest_sha256 }} · from ${{ inputs.expected_version_id }}"
 'on':
   workflow_dispatch:
     inputs:
@@ -21,8 +21,8 @@ run-name: "Publish ${{ inputs.tag }} \xB7 ${{ inputs.manifest_sha256 }} \xB7 fro
         type: choice
         default: stable
         options:
-        - stable
-        - beta
+          - stable
+          - beta
       qualify_only:
         description: Verify staged bytes and browsers without publishing or requesting production approval
         required: false
@@ -33,9 +33,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   prepare:
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.qualify_only || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
-      }}
-    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.qualify_only || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+    runs-on: ${{ fromJSON((vars.CI_RUNNER_MODE == 'self-hosted' || vars.CI_RUNNER_MODE == 'k3s') && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || (contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name) && github.ref == format('refs/heads/{0}', github.event.repository.default_branch))) && (vars.CI_RUNNER_LABELS || '[]') || '["ubuntu-latest"]') }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -44,46 +43,46 @@ jobs:
       artifact-id: ${{ steps.candidate.outputs.artifact-id }}
       manifest-sha256: ${{ steps.pack.outputs.manifest-sha256 }}
     steps:
-    - &id001
-      name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25
-      with:
-        egress-policy: audit
-    - &id002
-      name: Checkout exact source
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-        ref: ${{ github.sha }}
-    - name: Download and verify accepted release bytes
-      env:
-        GH_TOKEN: ${{ github.token }}
-        RELEASE_TAG: ${{ inputs.tag }}
-        RELEASE_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
-        RELEASE_CHANNEL: ${{ inputs.release_channel }}
-      run: python3 scripts/prepare-dist.py "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256" "$RELEASE_CHANNEL"
-    - name: Seal the exact staged website
-      id: pack
-      env:
-        RELEASE_TAG: ${{ inputs.tag }}
-        RELEASE_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
-        RELEASE_CHANNEL: ${{ inputs.release_channel }}
-      run: python3 scripts/browser_candidate.py pack dist browser-candidate "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256" "$RELEASE_CHANNEL"
-    - name: Preserve the exact staged website
-      id: candidate
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-      with:
-        name: staged-vitrine-${{ github.run_attempt }}
-        path: browser-candidate/
-        if-no-files-found: error
-        retention-days: 7
+      - &id001
+        name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25
+        with:
+          egress-policy: audit
+      - &id002
+        name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Download and verify accepted release bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          RELEASE_CHANNEL: ${{ inputs.release_channel }}
+        run: python3 scripts/prepare-dist.py "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256" "$RELEASE_CHANNEL"
+      - name: Seal the exact staged website
+        id: pack
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+          RELEASE_CHANNEL: ${{ inputs.release_channel }}
+        run: python3 scripts/browser_candidate.py pack dist browser-candidate "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256" "$RELEASE_CHANNEL"
+      - name: Preserve the exact staged website
+        id: candidate
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: staged-vitrine-${{ github.run_attempt }}
+          path: browser-candidate/
+          if-no-files-found: error
+          retention-days: 7
   browser:
     needs:
-    - prepare
+      - prepare
     permissions:
       contents: read
       actions: read
-    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/typescript-ci.yml@eb1ec3a1b978923955c77b478c9a2530846d6bae
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/typescript-ci.yml@6b2d99519d513d2b871d2a845ddd6134dea4af2c
     with:
       force-full: true
       run-node-ci: false
@@ -93,62 +92,60 @@ jobs:
       browser-artifact-id: ${{ needs.prepare.outputs.artifact-id }}
       browser-artifact-path: browser-candidate
       browser-evidence-prefix: staged-vitrine-browser
-      browser-prepare-command: bash scripts/prepare-browser-candidate.sh "${{ needs.prepare.outputs.manifest-sha256
-        }}"
+      browser-prepare-command: bash scripts/prepare-browser-candidate.sh "${{ needs.prepare.outputs.manifest-sha256 }}"
       browser-test-command: node scripts/browser-acceptance.cjs
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((vars.CI_RUNNER_MODE == 'self-hosted' || vars.CI_RUNNER_MODE == 'k3s') && (contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name) && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) && (vars.CI_RUNNER_RELEASE_LABELS || '[]') || '["ubuntu-latest"]') }}
     permissions:
       contents: read
       actions: read
     steps:
-    - *id001
-    - *id002
-    - name: Require protected production approval
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: python3 scripts/require-production.py
-    - name: Require publishing credentials
-      env:
-        HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
-      run: ': "${HERENOW_API_KEY:?Configure production environment credentials before publishing}"'
-    - name: Download the browser-accepted staged website
-      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-      with:
-        artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
-        path: browser-candidate
-        merge-multiple: true
-    - name: Verify source, run, attempt and all accepted site bytes
-      env:
-        CANDIDATE_MANIFEST_SHA256: ${{ needs.prepare.outputs.manifest-sha256 }}
-      run: python3 scripts/browser_candidate.py unpack browser-candidate dist "$CANDIDATE_MANIFEST_SHA256"
-    - name: Checkout pinned publishing dependency
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        repository: heredotnow/skill
-        ref: 8cf033ed53b82c0c67b16359c8c431f99e111d04
-        path: .ci-tools/herenow
-        persist-credentials: false
-    - name: Verify staged EPG origin before cutover
-      run: python3 scripts/check-public-epg.py ./dist --upstream
-    - name: Publish verified distribution
-      env:
-        HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
-        HERENOW_WORKSPACE: ottplay
-        HERENOW_SITE_SLUG: liminal-sketch-vv8r
-        HERENOW_PUBLISH_SCRIPT: ${{ github.workspace }}/.ci-tools/herenow/here-now/scripts/publish.sh
-        HERENOW_EXPECTED_VERSION: ${{ inputs.expected_version_id }}
-        SPA: '1'
-      run: bash scripts/publish-herenow.sh ./dist
-    - name: Verify public EPG generation after publication
-      run: python3 scripts/check-public-epg.py ./dist
-    if: ${{ !inputs.qualify_only && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-      }}
+      - *id001
+      - *id002
+      - name: Require protected production approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/require-production.py
+      - name: Require publishing credentials
+        env:
+          HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+        run: ': "${HERENOW_API_KEY:?Configure production environment credentials before publishing}"'
+      - name: Download the browser-accepted staged website
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
+          path: browser-candidate
+          merge-multiple: true
+      - name: Verify source, run, attempt and all accepted site bytes
+        env:
+          CANDIDATE_MANIFEST_SHA256: ${{ needs.prepare.outputs.manifest-sha256 }}
+        run: python3 scripts/browser_candidate.py unpack browser-candidate dist "$CANDIDATE_MANIFEST_SHA256"
+      - name: Checkout pinned publishing dependency
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: heredotnow/skill
+          ref: 8cf033ed53b82c0c67b16359c8c431f99e111d04
+          path: .ci-tools/herenow
+          persist-credentials: false
+      - name: Verify staged EPG origin before cutover
+        run: python3 scripts/check-public-epg.py ./dist --upstream
+      - name: Publish verified distribution
+        env:
+          HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
+          HERENOW_WORKSPACE: ottplay
+          HERENOW_SITE_SLUG: liminal-sketch-vv8r
+          HERENOW_PUBLISH_SCRIPT: ${{ github.workspace }}/.ci-tools/herenow/here-now/scripts/publish.sh
+          HERENOW_EXPECTED_VERSION: ${{ inputs.expected_version_id }}
+          SPA: '1'
+        run: bash scripts/publish-herenow.sh ./dist
+      - name: Verify public EPG generation after publication
+        run: python3 scripts/check-public-epg.py ./dist
+    if: ${{ !inputs.qualify_only && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     environment: production
     timeout-minutes: 30
     needs:
-    - prepare
-    - browser
+      - prepare
+      - browser
 permissions:
   contents: read
   actions: read
