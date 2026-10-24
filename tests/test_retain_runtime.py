@@ -27,6 +27,14 @@ class RetainedRuntimeTests(unittest.TestCase):
     def prepare(self):
         return RETAIN.create_copy(self.stage, self.output, self.receipt, "ottplay", SLUG, VERSION, self.owner)
 
+    def add_current_graph(self, fixture):
+        graph, _ = SWOP.runtime_graph(self.stage)
+        for relative in SWOP.GRAPH_ASSETS:
+            name = f"hosted-runtime/{graph}/{relative.as_posix()}"
+            raw = (self.stage / name).read_bytes()
+            fixture["listing"]["files"].append({"path": name, "size": len(raw), "hash": RETAIN.sha256(raw), "contentType": RETAIN.JS_MIME})
+            fixture["bodies"]["/files/" + name] = raw
+
     def rejected(self, message=None):
         with self.assertRaises((ValueError, SystemExit)) as caught:
             self.prepare()
@@ -53,17 +61,56 @@ class RetainedRuntimeTests(unittest.TestCase):
         self.assertEqual(sum(path == "/files" for path, _ in self.owner.calls), 2)
 
     def test_owner_graph_already_in_stock_is_checked_without_replacement(self):
-        graph, _ = SWOP.runtime_graph(self.stage)
         fixture = make_owner(self.stage, ())
-        for relative in SWOP.GRAPH_ASSETS:
-            name = f"hosted-runtime/{graph}/{relative.as_posix()}"
-            raw = (self.stage / name).read_bytes()
-            fixture["listing"]["files"].append({"path": name, "size": len(raw), "hash": RETAIN.sha256(raw), "contentType": RETAIN.JS_MIME})
-            fixture["bodies"]["/files/" + name] = raw
+        self.add_current_graph(fixture)
         self.owner = Reader(fixture)
-        result = self.prepare()
+        graph_bytes = sum(item["size"] for item in fixture["listing"]["files"] if item["path"].startswith("hosted-runtime/"))
+        with patch.object(RETAIN, "MAX_TOTAL_BYTES", graph_bytes):
+            result = self.prepare()
         self.assertEqual(result["addedFiles"], {})
         self.assertEqual(RETAIN.snapshot(self.output), self.original)
+
+    def test_final_graph_count_accepts_32_with_new_or_shared_stock_graph(self):
+        for shared in (False, True):
+            with self.subTest(shared=shared):
+                fixture = make_owner(self.stage, ("canonical",) * 31)
+                if shared:
+                    self.add_current_graph(fixture)
+                self.owner = Reader(fixture)
+                self.output = self.root / f"copy-{shared}"
+                self.receipt = self.root / f"receipt-{shared}.json"
+                result = self.prepare()
+                graphs = {name.split("/")[1] for name in result["files"] if name.startswith("hosted-runtime/")}
+                self.assertEqual(len(graphs), 32)
+                self.assertEqual(len(result["addedFiles"]), 31 * len(SWOP.GRAPH_ASSETS))
+                self.assertEqual(RETAIN.snapshot(self.stage), self.original)
+
+    def test_new_stock_graph_over_count_limit_fails_before_download_or_directory_creation(self):
+        self.owner = Reader(make_owner(self.stage, ("canonical",) * 32))
+        self.output = self.root / "not-created" / "copy"
+        self.rejected("count exceeds")
+        self.assertEqual(len(self.owner.calls), 2)
+        self.assertFalse(self.output.parent.exists())
+
+    def test_final_graph_byte_limit_includes_new_stock_and_accepts_exact_boundary(self):
+        owner_bytes = sum(item["size"] for item in self.owner.fixture["listing"]["files"] if item["path"].startswith("hosted-runtime/"))
+        stock_bytes = sum(item["size"] for name, item in self.original["files"].items() if name.startswith("hosted-runtime/"))
+        self.output = self.root / "not-created" / "copy"
+        with patch.object(RETAIN, "MAX_TOTAL_BYTES", owner_bytes + stock_bytes - 1):
+            self.rejected("total byte bound")
+        self.assertEqual(len(self.owner.calls), 2)
+        self.assertFalse(self.output.parent.exists())
+        with patch.object(RETAIN, "MAX_TOTAL_BYTES", owner_bytes + stock_bytes):
+            result = self.prepare()
+        self.assertEqual(len(result["addedFiles"]), 2 * len(SWOP.GRAPH_ASSETS))
+
+    def test_shared_graph_identity_mismatch_fails_before_download(self):
+        fixture = make_owner(self.stage, ())
+        self.add_current_graph(fixture)
+        fixture["listing"]["files"][-1]["hash"] = "0" * 64
+        self.owner = Reader(fixture)
+        self.rejected("collides with the new release bytes")
+        self.assertEqual(len(self.owner.calls), 2)
 
     def test_old_and_current_discovery_are_verified_and_only_old_is_added(self):
         fixture = make_owner(self.stage)

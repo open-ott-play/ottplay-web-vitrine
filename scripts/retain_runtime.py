@@ -41,7 +41,7 @@ def https_handler():
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_FILES = 2000
-MAX_GRAPHS = 16
+MAX_GRAPHS = 32
 MAX_DISCOVERIES = 16
 MAX_FILE_BYTES = 2_000_000
 MAX_GRAPH_BYTES = 8_000_000
@@ -232,6 +232,21 @@ def graph_inventory(owner):
     return groups
 
 
+def checked_graph_union(stock, owner):
+    """Bound the final publication before downloading or writing graph files."""
+    retained = graph_inventory(owner)
+    combined = dict(owner)
+    for name, item in stock["files"].items():
+        if not name.startswith("hosted-runtime/"):
+            continue
+        identity = {**item, "contentType": JS_MIME}
+        require(name not in owner or owner[name] == identity,
+                "Owner graph collides with the new release bytes")
+        combined[name] = identity
+    graph_inventory(combined)
+    return retained
+
+
 def sorted_graph_digest(directory):
     digest = hashlib.sha256(b"ottplay-hosted-runtime-v1\0")
     for relative in sorted(GRAPH_ASSETS):
@@ -286,7 +301,7 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
     checked_metadata(reader, expected_version, slug)
     owner = owner_inventory(reader, expected_version)
     preserved, changed_controls = check_protected(stock, owner, expected_version, reader)
-    groups = graph_inventory(owner)
+    groups = checked_graph_union(stock, owner)
     discoveries = discovery_inventory(owner)
     output.parent.mkdir(parents=True, exist_ok=True)
     created = False

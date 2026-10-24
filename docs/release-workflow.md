@@ -160,8 +160,10 @@ inventory with it after publishing. The wrapper reconstructs the same copy befor
 its CAS update and removes its temporary copy, receipt and publisher state afterward.
 The strict `swop.py --runtime` command continues to accept only the stock stage.
 
-Retention is bounded at 16 graphs, 2 MB per graph file, 8 MB per graph and 32 MB
-total. Reaching a limit fails closed; it never silently prunes an old URL. Any
+The final union of retained and new stock runtime graphs is bounded at 32 graphs,
+2 MB per graph file, 8 MB per graph and 32 MB total. A graph present in both is
+counted once. These limits are checked before downloading or writing graph files.
+Exceeding a limit fails closed; it never silently prunes an old URL. Any
 future removal or changed publication controls requires a separate reviewed
 reconciliation, not an overwrite flag.
 
