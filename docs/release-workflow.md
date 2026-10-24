@@ -181,6 +181,16 @@ there is no user-supplied exception file or general migration switch. The usual
 owner-version comparison also guards finalization. If another publication moves
 the live version before this cutover, stop and review a new source-pinned plan.
 
+A second source-pinned reconciliation corrects legacy demo MIME metadata at
+owner version `01M5NVXM5S6GNY3RFA11WGRJ3H`: `demo/pattern.m3u8` changes from
+`text/plain` to `application/vnd.apple.mpegurl`, and exactly `demo/pattern0.ts`
+through `demo/pattern11.ts` change from `application/octet-stream` to `video/mp2t`.
+All 13 file sizes and SHA-256 hashes are pinned in `retain_runtime.py`; the owner
+bytes are fetched and verified before accepting the copy. The existing publisher
+already emits these HLS types. Every other protected entry must remain identical,
+and `changedPublicationControls` records each metadata-only transition. A different
+version, partial migration, changed bytes or extra file still fails closed.
+
 The wrapper seeds a private temporary `.herenow/state.json` with only that
 reviewed version, slug and absolute publication-copy path. This is the pinned
 publisher's supported mechanism for putting `baseVersionId` in the update PUT.

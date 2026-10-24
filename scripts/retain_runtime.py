@@ -99,6 +99,7 @@ class OwnerReader:
 
     def __call__(self, suffix, limit=MAX_INVENTORY_BYTES):
         require(suffix in ("", "/files", "/files/.herenow/proxy.json")
+                or suffix in DEMO_MIME_ENDPOINTS
                 or suffix.startswith("/files/hosted-runtime/")
                 or (suffix.startswith("/files/") and CONTROL_DISCOVERY_PATTERN.fullmatch(suffix[7:])),
                 "Unexpected owner endpoint")
@@ -190,6 +191,32 @@ EPG_PROXY_TO = {
     "contentType": "application/json; charset=utf-8",
 }
 
+# The reviewed predecessor used file(1) fallback MIME types for these unchanged
+# demo bytes. Only this exact owner version may migrate to the publisher's HLS
+# types; no caller-provided inventory or broad MIME exception authorizes it.
+DEMO_MIME_FROM_VERSION = "01M5NVXM5S6GNY3RFA11WGRJ3H"
+DEMO_MIME_FROM = {
+    name: {"size": size, "hash": digest,
+           "contentType": "text/plain" if name.endswith(".m3u8") else "application/octet-stream"}
+    for name, size, digest in (
+        ("demo/pattern.m3u8", 475, "7ab79f27e38aea394ea7da8c47424053fd6fcec20ea855b34c68d7a21d93c159"),
+        ("demo/pattern0.ts", 142316, "1b9e35c2a644b19577a85eb3fd9493aff4418ba08d1da420994ca9ec7af6f15f"),
+        ("demo/pattern1.ts", 165064, "4d6e9da2d65c596189d1bf5eec12a47dc3f38b6a5040330dd9ac1348f188349a"),
+        ("demo/pattern2.ts", 142128, "b1ce10aea01f88068a0c17786db0890a85647655d3f6bf8db8cb70df99cf6a16"),
+        ("demo/pattern3.ts", 166944, "961b0c2ca1a0f5b4faf582302dede5befbb227b2dc5783ededdf92543ddcc974"),
+        ("demo/pattern4.ts", 142692, "a4f36a91fe43109b807795d6fbeb50d478cf980e102cb8b21853ec17c297afb3"),
+        ("demo/pattern5.ts", 158672, "b2111c70a229add3342568846978b6e1ad5ec7bc60c1c7fa4e4e4179c39e2dce"),
+        ("demo/pattern6.ts", 143068, "7f96ffebd7d9a4a218db29c25e90967cdf5d376b910d0ca0c2527bf1c922197b"),
+        ("demo/pattern7.ts", 165816, "2dcd3b82b1beeac2a1efbd4b822dd6989a805b06c3bad38a318dc700f4ea34e9"),
+        ("demo/pattern8.ts", 144196, "7b1a779ee9612ac233517cb4ac58773b24be4961132617b6911a3c1a85ab1fe8"),
+        ("demo/pattern9.ts", 165440, "ffab56de211c2c4ac2f8a39ab4aba39fe2de305ee02bad37b5659eb5b9546bb2"),
+        ("demo/pattern10.ts", 143068, "8ab15f114a109face6aa6404b827817d97884a45876a7393af6faea5824e7b0c"),
+        ("demo/pattern11.ts", 158296, "b12e949f10e6d28aff0d5541cd6a5981248c50eef4fe182fd40555c9dcae0ea0"),
+    )
+}
+DEMO_MIME_TO = {name: item | {"contentType": protected_mime(name)} for name, item in DEMO_MIME_FROM.items()}
+DEMO_MIME_ENDPOINTS = frozenset("/files/" + name for name in DEMO_MIME_FROM)
+
 
 def check_protected(stock, owner, expected_version, reader):
     expected = {name: {**item, "contentType": protected_mime(name)}
@@ -197,6 +224,18 @@ def check_protected(stock, owner, expected_version, reader):
     current = {name: item for name, item in owner.items() if protected(name)}
     if expected and expected == current:
         return expected, {}
+    approved_demo_mime = (expected_version == DEMO_MIME_FROM_VERSION
+                          and {name: current.get(name) for name in DEMO_MIME_FROM} == DEMO_MIME_FROM
+                          and {name: expected.get(name) for name in DEMO_MIME_TO} == DEMO_MIME_TO
+                          and (current | DEMO_MIME_TO) == expected)
+    if approved_demo_mime:
+        for name, identity in DEMO_MIME_FROM.items():
+            raw = reader("/files/" + name, identity["size"])
+            require(len(raw) == identity["size"] and sha256(raw) == identity["hash"],
+                    "Reviewed demo MIME predecessor byte digest mismatch")
+        return ({name: value for name, value in expected.items() if name not in DEMO_MIME_FROM},
+                {name: {"from": identity, "to": DEMO_MIME_TO[name], "reviewedFromVersion": expected_version}
+                 for name, identity in DEMO_MIME_FROM.items()})
     approved_cutover = (expected_version == EPG_PROXY_FROM_VERSION
                         and current.get(EPG_PROXY_PATH) == EPG_PROXY_FROM
                         and expected.get(EPG_PROXY_PATH) == EPG_PROXY_TO
