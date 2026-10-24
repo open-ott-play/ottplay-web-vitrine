@@ -52,8 +52,8 @@ See [staged browser acceptance](docs/browser-acceptance.md) for the six scenario
 - SWOP text entry uses encrypted pairing records in here.now Site Data. VPortal uses
   a fixed here.now proxy directly to the approved provider. These player features
   require no separately operated k3s service, private Cloudflare Worker or tunnel.
-- Optional home command-server discovery uses the deployment-specific HTTPS
-  bridge described below. It does not supply a command credential or grant control.
+- Optional home command-server discovery reads a public static catalog on this
+  Site. The separate Home controller issues credentials only after pairing approval.
 
 ## Shared demo media
 
@@ -91,38 +91,19 @@ their separate transport configuration.
 
 ### Home command-server discovery
 
-The same synchronous profile sets `window.__OTT_CONTROL_DISCOVERY_URL__` to
-an absolute `https://player.ottplay.here.now/local/control-discovery.<sha256>.json`
-URL. The checked-in [public Home descriptor](static/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json)
-contains only `version: 1` and a bounded `servers` list of `id`, `domain` and HTTPS
-`address` fields. It records reviewed DNS-SD metadata; fetching this static file
-does not perform a DNS lookup or prove that a controller is currently online.
-The actual Home controller remains at `https://www.2560801.xyz/ott-control`.
+The synchronous profile points to a fingerprinted public JSON catalog on
+`https://player.ottplay.here.now/`. It contains reviewed server identities and
+addresses only; the actual Home command server remains at
+`https://www.2560801.xyz/ott-control`.
 
-With this deployment profile, a compatible player attempts discovery at startup
-when no command server is configured. Existing settings are preserved. A missing
-or unavailable discovery file does not block the player; the user can retry discovery
-from command-server settings.
+An unconfigured compatible player can find the server and request pairing.
+Existing connections and deliberate disconnects stay unchanged. Discovery does
+not grant control: the operator approves the player's displayed code with
+`ott approve NAME CODE`. A missing catalog does not block playback, EPG or SWOP.
 
-The absolute URL also works for compatible local and native clients using this
-profile. Publication must verify credentialless cross-origin JSON access from
-the supported player origins; same-origin browser success alone is insufficient.
-Native DNS discovery remains a separate player capability.
-
-Changing a descriptor creates a new file hash and synchronous profile hash.
-Publication retains validated previous discovery files so already loaded profiles
-keep working through CDN and browser caches. See the [update procedure](docs/release-workflow.md#home-command-server-discovery).
-
-Discovery is an optional control feature. Playback, EPG and SWOP do not depend on
-the discovery file or separately operated Home controller. Finding an address is
-not permission to control the player: pairing requires explicit approval with
-`ott approve NAME CODE` and issues an individual device credential. Existing command
-credentials, provider passwords and playlist URLs must not be sent to discovery
-or included in the public profile. See the [control discovery acceptance checks](docs/release-workflow.md#home-command-server-discovery).
-
-The publisher requires the upstream `window.__OTT_CONTROL_DISCOVERY_VERSION__ = 1`
-capability marker before enabling this profile. Do not deploy an older player
-with the new profile or infer compatibility from a release tag alone.
+Use the [Home discovery runbook](docs/home-control-discovery.md) for the exact
+catalog URL, installation/profile requirements, connection examples, qualified
+beta deployment, CORS/cache checks, troubleshooting and rollback.
 
 ### Hosted EPG and pairing assets
 
