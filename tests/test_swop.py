@@ -23,7 +23,8 @@ class SwopPublicationTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.source = self.root / "static"
-        for relative in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json"):
+        for relative in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json",
+                         SWOP["CONTROL_DISCOVERY_PATH"].as_posix()):
             destination = self.source / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / "static" / relative, destination)
@@ -81,8 +82,10 @@ class SwopPublicationTests(unittest.TestCase):
         self.assertEqual(set(json.loads((self.target / ".herenow/proxy.json").read_text())["proxies"]),
                          {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes"})
 
-    def test_discovery_uses_exact_public_endpoint_and_only_changes_profile_hash(self):
-        endpoint = "https://www.2560801.xyz/ott-control/api/discovery"
+    def test_discovery_uses_content_addressed_public_file_and_only_changes_profile_hash(self):
+        raw = (self.source / SWOP["CONTROL_DISCOVERY_PATH"]).read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        endpoint = "https://player.ottplay.here.now/local/control-discovery." + digest + ".json"
         assignment = 'window.__OTT_CONTROL_DISCOVERY_URL__ = "' + endpoint + '";\n'
         self.assertEqual(SWOP["CONTROL_DISCOVERY_URL"], endpoint)
         self.assertEqual(SWOP["CONTROL_DISCOVERY_SCRIPT"], assignment)
@@ -90,6 +93,7 @@ class SwopPublicationTests(unittest.TestCase):
         self.runtime()
         old_graph, old_files = SWOP["runtime_graph"](self.target)
         stage_swop(self.target, self.source)
+        self.assertEqual((self.target / SWOP["CONTROL_DISCOVERY_PATH"]).read_bytes(), raw)
         self.assertEqual(SWOP["runtime_graph"](self.target), (old_graph, old_files))
         script = (self.target / "local/hosted.js").read_text()
         self.assertEqual(script.count(assignment), 1)
@@ -114,10 +118,10 @@ class SwopPublicationTests(unittest.TestCase):
             path = directory / "local/hosted.js"
             original = path.read_text()
             for changed in (original.replace(assignment, ""),
-                            original.replace("https://www.2560801.xyz/", "http://www.2560801.xyz/"),
-                            original.replace("https://www.2560801.xyz/", "https://attacker.example/"),
-                            original.replace("https://www.2560801.xyz/", "https://user:secret@www.2560801.xyz/"),
-                            original.replace("/api/discovery", "/api/discovery?token=unexpected"),
+                            original.replace("https://player.ottplay.here.now/", "http://player.ottplay.here.now/"),
+                            original.replace("https://player.ottplay.here.now/", "https://attacker.example/"),
+                            original.replace("https://player.ottplay.here.now/", "https://user:secret@player.ottplay.here.now/"),
+                            original.replace(".json\";", ".json?token=unexpected\";"),
                             original + assignment,
                             original + "window.extra = true;\n"):
                 path.write_text(changed)
@@ -125,6 +129,73 @@ class SwopPublicationTests(unittest.TestCase):
                     verify_swop(directory, template=template)
             path.write_text(original)
             verify_swop(directory, template=template)
+
+    def test_discovery_manifest_is_exact_pinned_and_stock_rejects_extra_versions(self):
+        path = self.source / SWOP["CONTROL_DISCOVERY_PATH"]
+        raw = path.read_bytes()
+        path.write_bytes(raw + b" ")
+        with self.assertRaisesRegex(SystemExit, "digest"):
+            verify_swop(self.source, template=True)
+        path.write_bytes(raw)
+        extra = self.source / ("local/control-discovery." + "a" * 64 + ".json")
+        extra.write_bytes(raw)
+        with self.assertRaisesRegex(SystemExit, "unexpected manifests"):
+            verify_swop(self.source, template=True)
+        extra.unlink()
+        verify_swop(self.source, template=True)
+
+    def test_discovery_rejects_untrusted_schema_addresses_and_duplicates(self):
+        valid = json.loads((self.source / SWOP["CONTROL_DISCOVERY_PATH"]).read_bytes())
+        values = [valid | {"token": "must-not-publish"}, valid | {"pairing_url": "https://other.example/api/pairings"},
+                  valid | {"version": True}, valid | {"version": 2}, valid | {"servers": {}},
+                  valid | {"servers": valid["servers"] * 17}, valid | {"servers": valid["servers"] * 2}]
+        for field, content in (("password", "must-not-publish"), ("domain", "localhost"),
+                               ("id", "unrelated._ottplay-ctrl._tcp.other.example."),
+                               ("id", "HOME._ottplay-ctrl._tcp.alvit.cf."),
+                               ("id", "home_bad._ottplay-ctrl._tcp.alvit.cf."),
+                               ("address", None)):
+            values.append(valid | {"servers": [valid["servers"][0] | {field: content}]})
+        long_domain = ".".join(["a" * 63] * 3 + ["example"])
+        values.append(valid | {"servers": [valid["servers"][0] | {
+            "domain": long_domain, "id": "b" * 63 + "._ottplay-ctrl._tcp." + long_domain + "."}]})
+        for address in ("http://controller.example.com", "https://user:secret@controller.example.com",
+                        "https://controller.example.com?token=secret", "https://controller.example.com#fragment",
+                        "https://controller.example.com?", "https://controller.example.com#",
+                        "https://controller.example.com/../control", "https://controller.example.com/%2e%2e/control",
+                        "https://controller.example.com:99999", "https://controller.example.com:443x",
+                        "https://controller.example.com\\@attacker.example", "https://controller.example.com\n",
+                        "https://127.0.0.1/control", "https://127.1/control", "https://0x7f.1/control",
+                        "https://0177.0.0.01/control", "https://169.254.169.254/", "https://controller.local/control",
+                        "https://controller.home.arpa/control", "https://controller.example.com/control/"):
+            values.append(valid | {"servers": [valid["servers"][0] | {"address": address}]})
+        for value in values:
+            raw = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                SWOP["validate_control_discovery"](raw, hashlib.sha256(raw).hexdigest())
+
+    def test_discovery_rejects_duplicate_keys_noncanonical_bytes_and_oversize(self):
+        for raw in (b'{"version":1,"version":1,"servers":[]}', b'{"version":1,"servers":[]}',
+                    b'\xff', b' ' * (SWOP["MAX_DISCOVERY_BYTES"] + 1)):
+            with self.subTest(size=len(raw)), self.assertRaises(ValueError):
+                SWOP["validate_control_discovery"](raw, hashlib.sha256(raw).hexdigest())
+
+    def test_discovery_accepts_empty_catalog_and_sixteen_distinct_public_bases(self):
+        for count in (0, 16):
+            value = {"version": 1, "servers": [
+                {"id": f"home{i}._ottplay-ctrl._tcp.home.example.", "domain": "home.example",
+                 "address": f"https://controller{i}.example.com:8443/ott-control"} for i in range(count)]}
+            raw = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+            self.assertEqual(SWOP["validate_control_discovery"](raw, hashlib.sha256(raw).hexdigest()), value)
+
+    def test_staging_rejects_existing_discovery_namespace_before_writing(self):
+        self.runtime()
+        (self.target / "local").mkdir()
+        conflict = self.target / "local/control-discovery.unreviewed.json"
+        conflict.write_text("do not overwrite")
+        before = {p.relative_to(self.target): p.read_bytes() for p in self.target.rglob("*") if p.is_file()}
+        with self.assertRaisesRegex(SystemExit, "repository-owned control discovery"):
+            stage_swop(self.target, self.source)
+        self.assertEqual({p.relative_to(self.target): p.read_bytes() for p in self.target.rglob("*") if p.is_file()}, before)
 
     def test_rejects_leaked_credentials_and_changed_upstreams(self):
         path = self.source / ".herenow/proxy.json"
@@ -231,7 +302,8 @@ class SwopPublicationTests(unittest.TestCase):
             verify_swop(self.source, template=True)
 
     def test_rejects_file_and_parent_symlinks(self):
-        for relative in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json", "local", ".herenow"):
+        for relative in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json",
+                         SWOP["CONTROL_DISCOVERY_PATH"].as_posix(), "local", ".herenow"):
             path = self.source / relative
             original = path.with_name(path.name + ".original")
             path.rename(original)

@@ -54,6 +54,19 @@ def make_owner(stage, orders=("canonical", "sorted-path"), version=VERSION):
             "listing": {"currentVersionId": version, "files": files}, "bodies": bodies, "graphs": graphs}
 
 
+def add_discovery(fixture, value=None, raw=None):
+    if raw is None:
+        value = value if value is not None else {"version": 1, "servers": [
+            {"id": "previous._ottplay-ctrl._tcp.home.example.", "domain": "home.example",
+             "address": "https://controller.example.com/ott-control"}]}
+        raw = (json.dumps(value, sort_keys=True, indent=2, ensure_ascii=True) + "\n").encode()
+    name = "local/control-discovery." + RETAIN.sha256(raw) + ".json"
+    identity = {"path": name, "size": len(raw), "hash": RETAIN.sha256(raw), "contentType": RETAIN.JSON_MIME}
+    fixture["listing"]["files"].append(identity)
+    fixture["bodies"]["/files/" + name] = raw
+    return identity
+
+
 class Reader:
     def __init__(self, fixture):
         self.fixture = copy.deepcopy(fixture)

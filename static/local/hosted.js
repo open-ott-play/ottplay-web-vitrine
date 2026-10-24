@@ -24,4 +24,4 @@ window.__OTTPLAY_HOSTED__ = {
     ]
   }
 };
-window.__OTT_CONTROL_DISCOVERY_URL__ = "https://www.2560801.xyz/ott-control/api/discovery";
+window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json";

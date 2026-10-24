@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 from urllib import error, request
 
-from retention_fixture import RETAIN, ROOT, Reader, SLUG, SWOP, VERSION, make_owner, make_stage
+from retention_fixture import RETAIN, ROOT, Reader, SLUG, SWOP, VERSION, add_discovery, make_owner, make_stage
 
 
 class RetainedRuntimeTests(unittest.TestCase):
@@ -64,6 +64,62 @@ class RetainedRuntimeTests(unittest.TestCase):
         result = self.prepare()
         self.assertEqual(result["addedFiles"], {})
         self.assertEqual(RETAIN.snapshot(self.output), self.original)
+
+    def test_old_and_current_discovery_are_verified_and_only_old_is_added(self):
+        fixture = make_owner(self.stage)
+        previous = add_discovery(fixture)
+        current = add_discovery(fixture, raw=(self.stage / SWOP.CONTROL_DISCOVERY_PATH).read_bytes())
+        self.owner = Reader(fixture)
+        result = self.prepare()
+        self.assertEqual(len(result["addedFiles"]), 15)
+        self.assertEqual({item["path"] for item in result["discoveryManifests"]}, {previous["path"], current["path"]})
+        self.assertIn(previous["path"], result["addedFiles"])
+        self.assertNotIn(current["path"], result["addedFiles"])
+        self.assertEqual((self.output / previous["path"]).read_bytes(), fixture["bodies"]["/files/" + previous["path"]])
+        self.assertEqual((self.output / current["path"]).read_bytes(), (self.stage / current["path"]).read_bytes())
+        self.assertEqual(RETAIN.snapshot(self.stage), self.original)
+        self.assertEqual(RETAIN.snapshot(self.output)["files"], self.original["files"] | result["addedFiles"])
+        self.assertIn(("/files/" + previous["path"], previous["size"]), self.owner.calls)
+
+    def test_invalid_discovery_inventory_is_rejected_before_file_downloads(self):
+        fixture = make_owner(self.stage)
+        add_discovery(fixture)
+        for key, value in (("path", "local/control-discovery.json"), ("path", "local/control-discovery." + "A" * 64 + ".json"),
+                           ("path", "local/control-discovery." + "a" * 64 + ".json/extra"),
+                           ("contentType", "text/html"), ("size", SWOP.MAX_DISCOVERY_BYTES + 1),
+                           ("hash", "0" * 64)):
+            self.owner = Reader(fixture)
+            self.owner.fixture["listing"]["files"][-1][key] = value
+            with self.subTest(key=key, value=value):
+                self.rejected()
+                self.assertEqual(len(self.owner.calls), 2)
+
+    def test_retained_discovery_bytes_schema_and_canonical_format_are_checked(self):
+        invalid = [b'{"version":1,"servers":[]}', b'{"version":1,"version":1,"servers":[]}']
+        invalid.append((json.dumps({"version": 1, "servers": [], "token": "must-not-publish"}, sort_keys=True, indent=2) + "\n").encode())
+        invalid.append((json.dumps({"version": 1, "servers": [{"id": "home._ottplay-ctrl._tcp.home.example.",
+                        "domain": "home.example", "address": "https://secret@controller.example.com"}]}, sort_keys=True, indent=2) + "\n").encode())
+        for raw in invalid:
+            fixture = make_owner(self.stage, ())
+            add_discovery(fixture, raw=raw)
+            self.owner = Reader(fixture)
+            with self.subTest(raw=raw):
+                self.rejected("Control discovery")
+        fixture = make_owner(self.stage, ())
+        item = add_discovery(fixture)
+        fixture["bodies"]["/files/" + item["path"]] = b" " * item["size"]
+        self.owner = Reader(fixture)
+        self.rejected("content digest")
+
+    def test_retained_discovery_count_includes_new_current_and_never_prunes(self):
+        fixture = make_owner(self.stage, ())
+        for count in range(RETAIN.MAX_DISCOVERIES):
+            add_discovery(fixture, {"version": 1, "servers": [{
+                "id": f"previous{count}._ottplay-ctrl._tcp.home.example.", "domain": "home.example",
+                "address": f"https://controller{count}.example.com/ott-control"}]})
+        self.owner = Reader(fixture)
+        self.rejected("count exceeds")
+        self.assertEqual(len(self.owner.calls), 2)
 
     def test_each_owner_version_read_rejects_drift_and_pending(self):
         for count in (1, 2, 3):
@@ -190,6 +246,26 @@ class RetainedRuntimeTests(unittest.TestCase):
 
 
 class OwnerReaderTests(unittest.TestCase):
+    def test_discovery_owner_reads_only_accept_exact_fingerprinted_path(self):
+        seen = []
+        class Response(io.BytesIO):
+            status = 200
+            def geturl(self):
+                return seen[-1].full_url
+        class Opener:
+            def open(self, req, timeout):
+                seen.append(req)
+                return Response(b"{}")
+        reader = RETAIN.OwnerReader("ottplay", SLUG, "offline-secret")
+        reader.opener = Opener()
+        suffix = "/files/local/control-discovery." + "a" * 64 + ".json"
+        self.assertEqual(reader(suffix, 2), b"{}")
+        for path in (suffix + "?token=other", suffix + "/extra", suffix.replace("a" * 64, "A" * 64),
+                     "/files/local/control-discovery.json", "/files/local/../control-discovery." + "a" * 64 + ".json"):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, "endpoint"):
+                reader(path, 2)
+        self.assertEqual(len(seen), 1)
+
     def test_only_the_exact_proxy_predecessor_can_be_read_for_migration(self):
         seen = []
         class Response(io.BytesIO):

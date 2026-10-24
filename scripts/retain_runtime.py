@@ -17,7 +17,9 @@ from urllib import error, parse, request
 
 from demo_media import verify_demo
 from msx import verify_msx
-from swop import GRAPH_ASSETS, GRAPH_PATH, runtime_graph, verify_swop, verify_swop_runtime
+from swop import (CONTROL_DISCOVERY_PATH, CONTROL_DISCOVERY_PATTERN, MAX_DISCOVERY_BYTES,
+                  GRAPH_ASSETS, GRAPH_PATH, runtime_graph, validate_control_discovery,
+                  verify_swop, verify_swop_runtime)
 
 
 
@@ -40,11 +42,13 @@ def https_handler():
 ROOT = Path(__file__).resolve().parents[1]
 MAX_FILES = 2000
 MAX_GRAPHS = 16
+MAX_DISCOVERIES = 16
 MAX_FILE_BYTES = 2_000_000
 MAX_GRAPH_BYTES = 8_000_000
 MAX_TOTAL_BYTES = 32_000_000
 MAX_INVENTORY_BYTES = 4_000_000
 JS_MIME = "text/javascript; charset=utf-8"
+JSON_MIME = "application/json; charset=utf-8"
 TOKEN = re.compile(r"[A-Za-z0-9_-]{1,128}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -95,7 +99,9 @@ class OwnerReader:
 
     def __call__(self, suffix, limit=MAX_INVENTORY_BYTES):
         require(suffix in ("", "/files", "/files/.herenow/proxy.json")
-                or suffix.startswith("/files/hosted-runtime/"), "Unexpected owner endpoint")
+                or suffix.startswith("/files/hosted-runtime/")
+                or (suffix.startswith("/files/") and CONTROL_DISCOVERY_PATTERN.fullmatch(suffix[7:])),
+                "Unexpected owner endpoint")
         try:
             req = request.Request(self.base + suffix, headers=self.headers, method="GET")
             with self.opener.open(req, timeout=30) as response:
@@ -234,6 +240,22 @@ def sorted_graph_digest(directory):
     return digest.hexdigest()
 
 
+def discovery_inventory(owner):
+    manifests = {}
+    for name, item in owner.items():
+        if not name.startswith("local/control-discovery"):
+            continue
+        match = CONTROL_DISCOVERY_PATTERN.fullmatch(name)
+        require(match is not None, "Invalid retained control discovery path")
+        require(0 < item["size"] <= MAX_DISCOVERY_BYTES and item["contentType"] == JSON_MIME,
+                "Retained control discovery size or MIME differs from the publisher contract")
+        require(item["hash"] == match[1], "Retained control discovery name does not match its digest")
+        manifests[name] = item
+    require(len(set(manifests) | {CONTROL_DISCOVERY_PATH.as_posix()}) <= MAX_DISCOVERIES,
+            "Retained control discovery count exceeds its bound; explicit retirement review is required")
+    return manifests
+
+
 def create_copy(stage, output, receipt, workspace, slug, expected_version, reader=None):
     """Validate stock and owner bytes before adding anything to a private copy."""
     stage, output, receipt = Path(stage), Path(output), Path(receipt)
@@ -265,13 +287,16 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
     owner = owner_inventory(reader, expected_version)
     preserved, changed_controls = check_protected(stock, owner, expected_version, reader)
     groups = graph_inventory(owner)
+    discoveries = discovery_inventory(owner)
     output.parent.mkdir(parents=True, exist_ok=True)
     created = False
     try:
         with tempfile.TemporaryDirectory(prefix="ottplay-retained-", dir=output.parent) as temporary:
             cache = Path(temporary)
             graph_records = []
+            discovery_records = []
             additions = {}
+            addition_sources = {}
             for graph, files in sorted(groups.items()):
                 for relative, identity in sorted(files.items()):
                     name = (GRAPH_PATH / graph / relative).as_posix()
@@ -285,10 +310,25 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
                                 "Owner graph collides with the new release bytes")
                     else:
                         additions[name] = {key: identity[key] for key in ("size", "hash")}
+                        addition_sources[name] = target
                 canonical_graph, _ = runtime_graph(cache / graph)
                 algorithm = "canonical" if graph == canonical_graph else "sorted-path"
                 require(graph == canonical_graph or graph == sorted_graph_digest(cache / graph), "Retained graph name does not match its bytes")
                 graph_records.append({"graph": graph, "algorithm": algorithm, "files": files})
+            for name, identity in sorted(discoveries.items()):
+                raw = reader("/files/" + name, identity["size"])
+                require(len(raw) == identity["size"], "Owner control discovery byte size mismatch")
+                validate_control_discovery(raw, identity["hash"])
+                target = cache / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(raw)
+                if name in stock["files"]:
+                    require(stock["files"][name] == {key: identity[key] for key in ("size", "hash")},
+                            "Owner control discovery collides with the new release bytes")
+                else:
+                    additions[name] = {key: identity[key] for key in ("size", "hash")}
+                    addition_sources[name] = target
+                discovery_records.append({"path": name, **identity})
             checked_metadata(reader, expected_version, slug)
             require(owner_inventory(reader, expected_version) == owner, "Owner inventory changed during retention")
             require(snapshot(stage) == stock, "Stock stage changed during retention")
@@ -297,17 +337,16 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
             shutil.copytree(stage, output, dirs_exist_ok=True)
             output.chmod(0o700)
             for name in additions:
-                relative = Path(name).relative_to(GRAPH_PATH)
                 target = output / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with target.open("xb") as stream:
-                    stream.write((cache / relative).read_bytes())
+                    stream.write(addition_sources[name].read_bytes())
             final = snapshot(output)
             expected_dirs = set(stock["directories"])
             for name in additions:
                 expected_dirs.update(parent.as_posix() for parent in PurePosixPath(name).parents if str(parent) != ".")
             require(final["files"] == stock["files"] | additions and set(final["directories"]) == expected_dirs,
-                    "Publication copy differs from stock plus attested graph additions")
+                    "Publication copy differs from stock plus attested graph additions and discovery manifests")
             require(snapshot(stage) == stock, "Stock stage changed while copying")
             checked_metadata(reader, expected_version, slug)
             evidence = {"schema": 1, "workspace": workspace, "slug": slug, "expectedVersionId": expected_version,
@@ -315,7 +354,8 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
                         "ownerInventorySha256": sha256(canonical(owner)), "publicationSha256": sha256(canonical(final)),
                         "stockUnchanged": True, "exactUnionVerified": True, "protectedFiles": preserved,
                         "changedPublicationControls": changed_controls,
-                        "graphs": graph_records, "addedFiles": additions, "files": final["files"]}
+                        "graphs": graph_records, "discoveryManifests": discovery_records,
+                        "addedFiles": additions, "files": final["files"]}
             receipt.parent.mkdir(parents=True, exist_ok=True)
             with os.fdopen(os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as stream:
                 json.dump(evidence, stream, indent=2, sort_keys=True)
