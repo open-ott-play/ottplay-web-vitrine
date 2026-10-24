@@ -160,8 +160,10 @@ inventory with it after publishing. The wrapper reconstructs the same copy befor
 its CAS update and removes its temporary copy, receipt and publisher state afterward.
 The strict `swop.py --runtime` command continues to accept only the stock stage.
 
-Retention is bounded at 16 graphs, 2 MB per graph file, 8 MB per graph and 32 MB
-total. Reaching a limit fails closed; it never silently prunes an old URL. Any
+The final union of retained and new stock runtime graphs is bounded at 32 graphs,
+2 MB per graph file, 8 MB per graph and 32 MB total. A graph present in both is
+counted once. These limits are checked before downloading or writing graph files.
+Exceeding a limit fails closed; it never silently prunes an old URL. Any
 future removal or changed publication controls requires a separate reviewed
 reconciliation, not an overwrite flag.
 
@@ -243,15 +245,22 @@ routes, embedded secrets, changed upstreams and changed schemas.
 
 ## Home command-server discovery
 
-The public hosted script also sets `window.__OTT_CONTROL_DISCOVERY_URL__` to the
-exact deployment-specific URL `https://www.2560801.xyz/ott-control/api/discovery`.
-The bridge resolves DNS-SD on the configured home network and returns server
-metadata. It is separate from here.now Site Data and the VPortal proxy; neither
-manifest gains another route or collection. No device or installation credential
-belongs in this script or the discovery response.
+The public hosted script sets `window.__OTT_CONTROL_DISCOVERY_URL__` to
+`https://player.ottplay.here.now/local/control-discovery.<sha256>.json`. Its exact
+hash is pinned in `scripts/swop.py`; the current file is checked in under
+`static/local/`. This is a reviewed snapshot of public DNS-SD metadata, not a live
+DNS resolver or a controller health check. The Home controller and its pairing
+API remain at `https://www.2560801.xyz/ott-control`.
+
+The JSON has exactly `version: 1` and `servers` with at most 16 distinct
+`{id, domain, address}` descriptors. The validator rejects duplicate keys, extra
+fields, noncanonical bytes, credential-bearing or unsafe addresses, and a file
+whose name does not match its SHA-256. No device token, installation credential,
+provider secret or playlist URL belongs in this file or the public profile.
+Site Data and proxy manifests gain no routes or collections.
 
 This deployment opts unconfigured clients into one startup discovery attempt.
-Generic clients without this profile have no personal home-network URL. Bridge
+Generic clients without this profile have no personal home-network URL. Discovery
 failure must be nonblocking, and configured clients must preserve their settings.
 
 Require an accepted upstream candidate with
@@ -261,26 +270,60 @@ testing the emitted player. Keep the profile synchronous and include the entire
 script in its content hash; the seven-file EPG graph remains derived exclusively
 from the accepted upstream bytes.
 
-Before promotion, verify the emitted player against the configured bridge:
+To update the public catalog:
+
+1. Obtain and review the current public controller descriptor. Keep only the
+   exact supported schema; do not copy a private server configuration or token.
+   The address and DNS-SD identity must still match the controller's live
+   `public_url` and pairing discovery checks.
+2. Serialize the reviewed value with
+   `(json.dumps(value, sort_keys=True, indent=2, ensure_ascii=True) + "\n").encode()`.
+   Save those bytes as `static/local/control-discovery.<sha256>.json`, update
+   `CONTROL_DISCOVERY_SHA256` in `scripts/swop.py`, and regenerate the matching
+   assignment in `static/local/hosted.js`. Keep exactly one current manifest in
+   the stock source. Never change bytes behind an existing hash or add a mutable
+   discovery alias.
+3. Run the source, SWOP, staging and retention tests. The bootstrap hash must
+   change, while an unchanged release keeps the same seven-file EPG graph.
+4. Prepare the normal owner-version-guarded publication. `retain_runtime.py`
+   reads previous fingerprinted manifests through the authenticated owner API,
+   verifies their schema, digest, MIME and size, and adds them to the publication
+   copy without changing the stock stage. The limit is 16 retained/current
+   manifests of at most 8192 bytes each. Reaching it stops publication for an
+   explicit retirement review; the publisher never silently prunes old URLs.
+
+here.now can cache JSON assets independently of `index.html` (including stale
+responses during revalidation). Content-addressed URLs isolate revisions rather
+than relying on a cache-control setting. Keep previous files in the same site version as the new profile; edge caches may
+converge at different times. Preserve existing owner settings/protected files,
+and use the current owner version as the compare-and-swap guard.
+
+Before promotion, verify the emitted player and published file:
 
 - Discovery sends no existing command token, provider key or playlist URL and
-  returns metadata only. Bridge failure leaves EPG, SWOP and playback available.
+  returns metadata only. Discovery failure leaves EPG, SWOP and playback available.
 - A discovered server creates a pending pairing request. Only explicit operator
   approval with `ott approve NAME CODE` allows an individual device credential to be
   applied. Merely loading this Site or discovering an address grants no trust.
-- The trusted bridge returns only controllers matching its configured
-  `public_url`, including the exact HTTPS origin and base path. Reject unrelated
-  DNS-SD targets rather than trusting their own claim to be approved.
+- The reviewed catalog nominates only intended controllers. Publishing a
+  different HTTPS address is a trust-boundary change, even if its schema passes.
+  The live controller still verifies its configured `public_url`, including the
+  exact HTTPS origin/base path, when creating, approving and claiming pairings.
 - Existing control settings are preserved unless the user deliberately starts
   replacement pairing. Cancellation, expiry or changed settings cannot apply a
   stale approval. A credential from one device must not authorize another.
-- Hosted-browser CORS and LG navigation work at the actual deployment origin.
+- The new JSON URL returns HTTP 200, the exact expected bytes and
+  `Content-Type: application/json`. Verify credentialless CORS with
+  `Access-Control-Allow-Origin: *` for the actual local Chrome, Tauri and
+  Capacitor origins (including `null` where used), and check LG navigation.
+  A missing static path may return the SPA HTML shell with HTTP 200; status alone
+  is not success. Test a browser fetch as well as response headers.
   Use a controlled test device and clean up its pending pairing and credential;
   never exercise a real user's token in public acceptance logs.
 
 Retain the usual EPG, SWOP, demo, MSX and cache acceptance checks. Publishing the
-profile does not deploy the bridge or approve a pairing. Coordinate the new
-source candidate, bridge readiness and publisher revision before the official
+profile does not deploy the controller or approve a pairing. Coordinate the new
+source candidate, controller readiness and publisher revision before the official
 RC, stable and here.now delivery; do not republish an older stable to enable this
 feature ahead of its compatible source release.
 

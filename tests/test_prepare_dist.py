@@ -136,8 +136,11 @@ class PrepareDistributionTests(unittest.TestCase):
                          (self.root / "static/.herenow/proxy.json").read_bytes())
         self.assertEqual((self.root / "dist/.herenow/data.json").read_bytes(),
                          (self.root / "static/.herenow/data.json").read_bytes())
+        manifests = list((self.root / "dist/local").glob("control-discovery.*.json"))
+        self.assertEqual(len(manifests), 1)
+        self.assertEqual(manifests[0].name, "control-discovery." + hashlib.sha256(manifests[0].read_bytes()).hexdigest() + ".json")
         self.assertTrue((self.root / "dist/local/hosted.js").read_text().endswith(
-            'window.__OTT_CONTROL_DISCOVERY_URL__ = "https://www.2560801.xyz/ott-control/api/discovery";\n'))
+            'window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/' + manifests[0].name + '";\n'))
 
     def test_retried_rc_uses_accepted_manifest_and_current_attempt(self):
         self.attempt = 2

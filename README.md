@@ -92,18 +92,29 @@ their separate transport configuration.
 ### Home command-server discovery
 
 The same synchronous profile sets `window.__OTT_CONTROL_DISCOVERY_URL__` to
-`https://www.2560801.xyz/ott-control/api/discovery`. This public endpoint returns
-DNS-SD server metadata from the configured home network. A hosted browser cannot
-query that network's DNS directly; native and local-server clients use their own
-system DNS through their discovery implementation.
+an absolute `https://player.ottplay.here.now/local/control-discovery.<sha256>.json`
+URL. The checked-in [public Home descriptor](static/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json)
+contains only `version: 1` and a bounded `servers` list of `id`, `domain` and HTTPS
+`address` fields. It records reviewed DNS-SD metadata; fetching this static file
+does not perform a DNS lookup or prove that a controller is currently online.
+The actual Home controller remains at `https://www.2560801.xyz/ott-control`.
 
 With this deployment profile, a compatible player attempts discovery at startup
 when no command server is configured. Existing settings are preserved. A missing
-or unavailable bridge does not block the player; the user can retry discovery
+or unavailable discovery file does not block the player; the user can retry discovery
 from command-server settings.
 
-Discovery is an optional control feature backed by the separately operated home
-bridge. Playback, EPG and SWOP do not depend on that bridge. Finding an address is
+The absolute URL also works for compatible local and native clients using this
+profile. Publication must verify credentialless cross-origin JSON access from
+the supported player origins; same-origin browser success alone is insufficient.
+Native DNS discovery remains a separate player capability.
+
+Changing a descriptor creates a new file hash and synchronous profile hash.
+Publication retains validated previous discovery files so already loaded profiles
+keep working through CDN and browser caches. See the [update procedure](docs/release-workflow.md#home-command-server-discovery).
+
+Discovery is an optional control feature. Playback, EPG and SWOP do not depend on
+the discovery file or separately operated Home controller. Finding an address is
 not permission to control the player: pairing requires explicit approval with
 `ott approve NAME CODE` and issues an individual device credential. Existing command
 credentials, provider passwords and playlist URLs must not be sent to discovery
