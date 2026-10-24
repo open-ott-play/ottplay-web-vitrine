@@ -380,9 +380,13 @@ pass before the switch. Immediately after publication the job runs
 `https://player.ottplay.here.now` to prove that the replacement proxy is active.
 Neither command accepts an arbitrary origin or falls back after a failure.
 
-Both checks require matching generations, a current programme with description,
-archive rows and non-stale data. The publication wrapper also rejects a generation
-at least as old as the service's two-hour refresh period, or more than five minutes in the
+Both checks require matching generations, a current programme with a nonblank
+title and a time span containing the check time, valid archive rows, and non-stale
+data. At least one nonblank description must exist in the returned current/archive
+window; future rows do not satisfy this check. XMLTV can legitimately omit the
+current description, so the result reports `currentDescriptionAvailable` rather
+than rejecting or fabricating that metadata. Complete description loss still fails.
+The publication wrapper also rejects a generation at least as old as the service's two-hour refresh period, or more than five minutes in the
 future. Requests ask caches to revalidate. HTTP failures stop the job without retry;
 bounded diagnostics identify the request stage, status and recognized response
 headers without logging queries, cookies or arbitrary response bodies.
