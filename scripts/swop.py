@@ -17,7 +17,8 @@ DATA_PATH = Path(".herenow/data.json")
 EXPECTED_CONFIG = {}
 PROVIDER_URL = "http://cd3c21307c36.vportalu.net/api/v1/"
 EPG_API_URL = "https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1"
-CONTROL_DISCOVERY_SHA256 = "0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d"
+CONTROL_RUNTIME_PATH = Path("dist/control-transport.js")
+CONTROL_DISCOVERY_SHA256 = "17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497"
 CONTROL_DISCOVERY_PATH = Path("local/control-discovery." + CONTROL_DISCOVERY_SHA256 + ".json")
 CONTROL_DISCOVERY_PATTERN = re.compile(r"local/control-discovery\.([0-9a-f]{64})\.json")
 MAX_DISCOVERY_BYTES = 8192
@@ -31,6 +32,11 @@ EPG_SERVER_CAPABILITY = re.compile(
 )
 HOSTED_CONFIG = {
     "version": 1,
+    "controlTransport": {
+        "version": 1,
+        "endpoint": "/ott-control/api/device-transport",
+        "bases": ["https://player.ottplay.here.now/ott-control", "https://www.2560801.xyz/ott-control"],
+    },
     "epg": {
         "mode": "server",
         "apiBase": "/epg/v1",
@@ -50,6 +56,12 @@ HOSTED_CONFIG = {
 }
 EXPECTED_PROXY = {
     "proxies": {
+        "/ott-control/api/device-transport": {
+            "upstream": "https://www.2560801.xyz/ott-control/api/device-transport",
+            "method": "POST",
+            "headers": {"Content-Type": "application/json", "Accept": "application/json"},
+            "rateLimit": "72000/hour/ip",
+        },
         "/epg/v1/match": {
             "upstream": EPG_API_URL + "/match",
             "method": "POST",
@@ -106,6 +118,7 @@ GRAPH_ASSETS = (
     Path("hosted/epg-diagnostics.js"),
 )
 REQUIRED_RUNTIME_ASSETS = (
+    CONTROL_RUNTIME_PATH,
     *GRAPH_ASSETS,
     Path("swop-input/index.html"),
     Path("swop-input/app.js"),
@@ -247,6 +260,15 @@ def bootstrap_tag(script):
     return '<script src="/local/hosted.js?v=' + digest + '"></script>'
 
 
+def control_bootstrap_tag(directory):
+    runtime = _regular_file(directory, CONTROL_RUNTIME_PATH, "Hosted control runtime")
+    raw = runtime.read_bytes()
+    if not re.search(rb"__OTT_CONTROL_TRANSPORT_VERSION__\s*=\s*1\b", raw):
+        raise SystemExit("Hosted control requires its version 1 transport runtime")
+    digest = hashlib.sha256(raw).hexdigest()
+    return '<script src="/' + CONTROL_RUNTIME_PATH.as_posix() + '?v=' + digest + '"></script>'
+
+
 class _BootstrapParser(HTMLParser):
     # Bootstrap validation assumes scripting is enabled. Tags inside HTML
     # raw-text/RCDATA containers (including noscript) cannot execute scripts.
@@ -298,7 +320,15 @@ def _verify_bootstrap_document(document, tag):
 
 def verify_hosted_bootstrap(directory, script):
     path = _regular_file(directory, Path("index.html"), "Hosted bootstrap")
-    _verify_bootstrap_document(path.read_text(), bootstrap_tag(script))
+    document = path.read_text()
+    _verify_bootstrap_document(document, bootstrap_tag(script))
+    tag = control_bootstrap_tag(directory)
+    parser = _BootstrapParser()
+    parser.feed(document)
+    if (document.count(CONTROL_RUNTIME_PATH.as_posix()) != 1 or len(parser.scripts) < 2
+            or parser.scripts[1][0] != tag[:-9]
+            or parser.scripts[1][1] not in {("html", "head"), ("head",)}):
+        raise SystemExit("Hosted control runtime must load synchronously after the profile")
 
 
 def verify_runtime_graph(directory, graph, contents):
@@ -361,6 +391,8 @@ def verify_swop_runtime(directory):
         raise SystemExit("Hosted control discovery requires a version 1 release capability marker")
     if not EPG_SERVER_CAPABILITY.search(script):
         raise SystemExit("Hosted server EPG requires a version 1 release capability marker")
+    if not re.search(rb"(?<![A-Za-z0-9_$.])window\.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__\s*=\s*1(?=\s*(?:[;,}]|$))", script):
+        raise SystemExit("Hosted control requires a version 1 client transport")
     for relative in REQUIRED_RUNTIME_ASSETS:
         path = _regular_file(directory, relative, "Hosted runtime asset " + relative.as_posix())
         if not path.stat().st_size:
@@ -388,7 +420,7 @@ def stage_swop(directory, source):
         raise SystemExit("Hosted bootstrap requires an unmodified HTML head")
     graph, contents = runtime_graph(directory)
     script = staged_hosted_script(graph)
-    document = document[:head.end()] + "\n        " + bootstrap_tag(script) + document[head.end():]
+    document = document[:head.end()] + "\n        " + bootstrap_tag(script) + control_bootstrap_tag(directory) + document[head.end():]
     _verify_bootstrap_document(document, bootstrap_tag(script))
     for relative, data in contents.items():
         target = directory / GRAPH_PATH / graph / relative

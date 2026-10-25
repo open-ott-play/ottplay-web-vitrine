@@ -191,6 +191,16 @@ EPG_PROXY_TO = {
     "contentType": "application/json; charset=utf-8",
 }
 
+
+# One reviewed hosted-control route addition. Pin the accepted live predecessor;
+# this exception cannot modify any other publication control.
+CONTROL_PROXY_FROM_VERSION = "01M5TMTKNGZ2VBMX21423J3FKM"
+CONTROL_PROXY_FROM = EPG_PROXY_TO
+CONTROL_PROXY_TO = {
+    "size": 1149, "hash": "b6d6f3efd4620a2a83f15775266bc6ef5bad824a2fa32752f6c4853174ca2329",
+    "contentType": "application/json; charset=utf-8",
+}
+
 # The reviewed predecessor used file(1) fallback MIME types for these unchanged
 # demo bytes. Only this exact owner version may migrate to the publisher's HLS
 # types; no caller-provided inventory or broad MIME exception authorizes it.
@@ -236,18 +246,22 @@ def check_protected(stock, owner, expected_version, reader):
         return ({name: value for name, value in expected.items() if name not in DEMO_MIME_FROM},
                 {name: {"from": identity, "to": DEMO_MIME_TO[name], "reviewedFromVersion": expected_version}
                  for name, identity in DEMO_MIME_FROM.items()})
-    approved_cutover = (expected_version == EPG_PROXY_FROM_VERSION
-                        and current.get(EPG_PROXY_PATH) == EPG_PROXY_FROM
-                        and expected.get(EPG_PROXY_PATH) == EPG_PROXY_TO
-                        and (current | {EPG_PROXY_PATH: EPG_PROXY_TO}) == expected)
-    require(approved_cutover,
-            "Owner demo, MSX or publication controls differ from the reviewed stock stage")
-    raw = reader("/files/" + EPG_PROXY_PATH, EPG_PROXY_FROM["size"])
-    require(len(raw) == EPG_PROXY_FROM["size"] and sha256(raw) == EPG_PROXY_FROM["hash"],
-            "Reviewed EPG proxy predecessor byte digest mismatch")
-    return ({name: value for name, value in expected.items() if name != EPG_PROXY_PATH},
-            {EPG_PROXY_PATH: {"from": current[EPG_PROXY_PATH], "to": expected[EPG_PROXY_PATH],
-                              "reviewedFromVersion": expected_version}})
+    for version, before, after in (
+            (EPG_PROXY_FROM_VERSION, EPG_PROXY_FROM, EPG_PROXY_TO),
+            (CONTROL_PROXY_FROM_VERSION, CONTROL_PROXY_FROM, CONTROL_PROXY_TO)):
+        approved_cutover = (expected_version == version
+                            and current.get(EPG_PROXY_PATH) == before
+                            and expected.get(EPG_PROXY_PATH) == after
+                            and (current | {EPG_PROXY_PATH: after}) == expected)
+        if not approved_cutover:
+            continue
+        raw = reader("/files/" + EPG_PROXY_PATH, before["size"])
+        require(len(raw) == before["size"] and sha256(raw) == before["hash"],
+                "Reviewed proxy predecessor byte digest mismatch")
+        return ({name: value for name, value in expected.items() if name != EPG_PROXY_PATH},
+                {EPG_PROXY_PATH: {"from": before, "to": after,
+                                  "reviewedFromVersion": expected_version}})
+    require(False, "Owner demo, MSX or publication controls differ from the reviewed stock stage")
 
 
 def graph_inventory(owner):

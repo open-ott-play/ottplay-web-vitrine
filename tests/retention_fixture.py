@@ -23,10 +23,13 @@ def make_stage(target):
     (target / "dist").mkdir()
     (target / "dist/player.js").write_text(
         'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; '
-        'window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;')
+        'window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;')
     for relative in SWOP.REQUIRED_RUNTIME_ASSETS:
         asset = target / relative
         asset.parent.mkdir(parents=True, exist_ok=True)
+        if relative == SWOP.CONTROL_RUNTIME_PATH:
+            asset.write_bytes(b"window.__OTT_CONTROL_TRANSPORT_VERSION__=1;\n")
+            continue
         asset.write_bytes(SWOP.WORKER_HEADER + b"self.onmessage = function () {};\n"
                           if relative == Path("hosted/epg-worker.js") else b"/* fixture */\n")
     SWOP.stage_swop(target, ROOT / "static")

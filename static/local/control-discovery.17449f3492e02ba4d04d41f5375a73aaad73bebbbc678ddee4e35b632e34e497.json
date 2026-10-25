@@ -1,7 +1,7 @@
 {
   "servers": [
     {
-      "address": "https://www.2560801.xyz/ott-control",
+      "address": "https://player.ottplay.here.now/ott-control",
       "domain": "alvit.cf",
       "id": "home._ottplay-ctrl._tcp.alvit.cf."
     }

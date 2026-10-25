@@ -26,12 +26,15 @@ class DemoMediaTests(unittest.TestCase):
             shutil.rmtree(self.site / name)
         (self.site / "index.html").write_text('<!doctype html><html><head><title>player</title></head></html>')
         (self.site / "dist").mkdir()
-        (self.site / "dist/player.js").write_text('window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;')
+        (self.site / "dist/player.js").write_text('window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;')
         for relative in ("hosted/epg-worker.js", "hosted/epg-server.js", "hosted/epg-diagnostics.js", "hosted/pako-inflate.js", "hosted/sax.js",
                          "js/runtime-polyfills.js", "js/ottplay-core.js",
-                         "swop-input/index.html", "swop-input/app.js"):
+                         "swop-input/index.html", "swop-input/app.js", "dist/control-transport.js"):
             asset = self.site / relative
             asset.parent.mkdir(parents=True, exist_ok=True)
+            if relative == "dist/control-transport.js":
+                asset.write_bytes(b"window.__OTT_CONTROL_TRANSPORT_VERSION__=1;\n")
+                continue
             asset.write_bytes(SWOP["WORKER_HEADER"] + b"self.onmessage = function () {};\n" if relative == "hosted/epg-worker.js" else b"/* runtime-fixture */\n")
         SWOP["stage_swop"](self.site, ROOT / "static")
         self.demo = self.site / "demo"
