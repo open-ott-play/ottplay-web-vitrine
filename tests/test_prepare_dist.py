@@ -47,7 +47,7 @@ class PrepareDistributionTests(unittest.TestCase):
                                 "sha256": self.checksum or hashlib.sha256(self.archive).hexdigest()}]}).encode()
 
     def tar(self, name="index.html", symlink=False, demo=False,
-            runtime=b'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;'):
+            runtime=b'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;'):
         stream = io.BytesIO()
         with tarfile.open(fileobj=stream, mode="w:gz") as archive:
             entry = tarfile.TarInfo(name)
@@ -65,10 +65,12 @@ class PrepareDistributionTests(unittest.TestCase):
                 archive.addfile(entry, io.BytesIO(runtime))
                 for name in ("hosted/epg-worker.js", "hosted/epg-server.js", "hosted/epg-diagnostics.js", "hosted/pako-inflate.js", "hosted/sax.js",
                              "js/runtime-polyfills.js", "js/ottplay-core.js",
-                             "swop-input/index.html", "swop-input/app.js"):
+                             "swop-input/index.html", "swop-input/app.js", "dist/control-transport.js"):
                     entry = tarfile.TarInfo(name)
                     data = (b'importScripts("../js/runtime-polyfills.js", "../js/ottplay-core.js", "pako-inflate.js", "sax.js");\nself.onmessage = function () {};\n'
                             if name == "hosted/epg-worker.js" else b"/* runtime-fixture */\n")
+                    if name == "dist/control-transport.js":
+                        data = b"window.__OTT_CONTROL_TRANSPORT_VERSION__=1;\n"
                     entry.size = len(data)
                     archive.addfile(entry, io.BytesIO(data))
             if demo:

@@ -7,8 +7,9 @@ the command server remains a separate service.
 ## Addresses and prerequisites
 
 - Player: <https://player.ottplay.here.now/>.
-- Current public catalog: <https://player.ottplay.here.now/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json>.
-- Home **Server address**: `https://www.2560801.xyz/ott-control`.
+- Current public catalog: <https://player.ottplay.here.now/local/control-discovery.17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497.json>.
+- Hosted Home **Server address**: `https://player.ottplay.here.now/ott-control`.
+- Direct/native Home address remains `https://www.2560801.xyz/ott-control`.
 
 Do not enter the catalog URL in the player's **Server address** field. The
 catalog contains only the reviewed DNS-SD identity and HTTPS address:
@@ -17,7 +18,7 @@ catalog contains only the reviewed DNS-SD identity and HTTPS address:
 {
   "servers": [
     {
-      "address": "https://www.2560801.xyz/ott-control",
+      "address": "https://player.ottplay.here.now/ott-control",
       "domain": "alvit.cf",
       "id": "home._ottplay-ctrl._tcp.alvit.cf."
     }
@@ -28,8 +29,10 @@ catalog contains only the reviewed DNS-SD identity and HTTPS address:
 
 Reading this file neither checks the controller's current availability nor
 grants remote control. Pairing, device credentials and command queues remain on
-the Home controller. Its configured `public_url` and current DNS-SD descriptor
-must agree with the catalog when it validates pairing.
+the Home controller. Its canonical `public_url` and DNS-SD descriptor remain the direct address.
+The hosted address must be an explicitly configured `discovery.public_aliases`
+entry. Hosted pairing submits `server_address`, and approval and claim both
+validate that exact alias against the controller configuration.
 
 No installation is needed to open the hosted player. For local Chrome/server,
 Tauri or Capacitor, install the appropriate [official player release](https://github.com/open-ott-play/ottplay-foss/releases)
@@ -37,6 +40,28 @@ using its platform instructions, and use a deployment profile that loads this
 catalog before the player. This website repository does not update installed
 applications. See the player's [command-server guide](https://github.com/open-ott-play/ottplay-foss/blob/main/docs/remote-command-server.md)
 for native discovery, transport requirements and manual setup.
+
+## Hosted transport and deployment order
+
+The site loads the verified `dist/control-transport.js` immediately after the
+hosted profile and before any player scripts. The profile lists the two reviewed
+Home bases above. Requests to those bases use the same-origin
+`POST /ott-control/api/device-transport` route; unrelated manually configured
+controllers retain direct transport.
+
+The adapter carries the device token in the HTTPS JSON body. A transparent
+here.now proxy does not forward the client's Authorization header. The backend
+accepts only the fixed pairing/device/diagnostics route allowlist, restores
+per-device authentication, and preserves the original response status, headers
+and body. No administrator credential or shared device token is stored in the
+site or proxy manifest. Missing or invalid transport assets fail closed.
+
+Deploy the compatible controller first, add the explicit hosted alias, then
+publish the matching official player and this site profile as one version-bound
+update. Keep the direct URL and DNS-SD record working for native clients. Check
+pairing approval, device polling, notification images, diagnostics epoch headers
+and old saved connections before retiring any path. Never change the canonical
+address just to make a hosted alias validate.
 
 ## Connect and use a player
 
@@ -73,7 +98,7 @@ administrator token, another player's code, or credentials embedded in a URL.
 The generated synchronous `local/hosted.js` sets:
 
 ```js
-window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json";
+window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/control-discovery.17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497.json";
 ```
 
 `scripts/swop.py` inserts that script before other player scripts and includes
@@ -169,7 +194,7 @@ Run this public read-only probe from the repository checkout, using the verified
 [host TLS profile](security-design.md#host-tls-profile), without authorization:
 
 ```sh
-DISCOVERY_URL='https://player.ottplay.here.now/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json'
+DISCOVERY_URL='https://player.ottplay.here.now/local/control-discovery.17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497.json'
 curl --disable --fail --silent --show-error --max-time 15 --max-filesize 8192 \
   --proto '=https' --tlsv1.2 --ciphers 'DEFAULT:@SECLEVEL=2' \
   -H 'Origin: http://localhost:8443' \

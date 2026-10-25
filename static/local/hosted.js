@@ -1,5 +1,13 @@
 window.__OTTPLAY_HOSTED__ = {
   "version": 1,
+  "controlTransport": {
+    "version": 1,
+    "endpoint": "/ott-control/api/device-transport",
+    "bases": [
+      "https://player.ottplay.here.now/ott-control",
+      "https://www.2560801.xyz/ott-control"
+    ]
+  },
   "epg": {
     "mode": "server",
     "apiBase": "/epg/v1",
@@ -24,4 +32,4 @@ window.__OTTPLAY_HOSTED__ = {
     ]
   }
 };
-window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json";
+window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/control-discovery.17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497.json";

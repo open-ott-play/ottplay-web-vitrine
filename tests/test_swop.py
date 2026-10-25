@@ -32,14 +32,17 @@ class SwopPublicationTests(unittest.TestCase):
         self.target.mkdir()
         (self.target / "index.html").write_text('<!doctype html><html><head><script src="/player-loader.js"></script></head></html>')
 
-    def runtime(self, script='window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;'):
+    def runtime(self, script='window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;'):
         runtime = self.target / "dist/player.js"
         runtime.parent.mkdir(exist_ok=True)
         runtime.write_text(script)
         for relative in SWOP["REQUIRED_RUNTIME_ASSETS"]:
             asset = self.target / relative
             asset.parent.mkdir(parents=True, exist_ok=True)
-            asset.write_bytes(SWOP["WORKER_HEADER"] + b"self.onmessage = function () {};\n" if relative == Path("hosted/epg-worker.js") else b"/* runtime-fixture */\n")
+            if relative == SWOP["CONTROL_RUNTIME_PATH"]:
+                asset.write_bytes(b"window.__OTT_CONTROL_TRANSPORT_VERSION__ = 1;\n")
+            else:
+                asset.write_bytes(SWOP["WORKER_HEADER"] + b"self.onmessage = function () {};\n" if relative == Path("hosted/epg-worker.js") else b"/* runtime-fixture */\n")
         return runtime
 
     def profile(self, target=None):
@@ -80,7 +83,28 @@ class SwopPublicationTests(unittest.TestCase):
         self.assertEqual(profile["diagnosticsUrl"], "/hosted-runtime/" + graph + "/hosted/epg-diagnostics.js")
         self.assertEqual(profile["source"], "https://cdn.epg.one/epg2.xml.gz")
         self.assertEqual(set(json.loads((self.target / ".herenow/proxy.json").read_text())["proxies"]),
-                         {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes"})
+                         {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes", "/ott-control/api/device-transport"})
+
+    def test_hosted_control_helper_is_verified_and_runs_before_player(self):
+        self.runtime()
+        stage_swop(self.target, self.source)
+        path = self.target / "index.html"
+        original = path.read_text()
+        tag = SWOP["control_bootstrap_tag"](self.target)
+        self.assertLess(original.index("local/hosted.js"), original.index("dist/control-transport.js"))
+        self.assertLess(original.index("dist/control-transport.js"), original.index("/player-loader.js"))
+        for changed in (original.replace(tag, ""), original.replace(tag, tag + tag),
+                        original.replace(tag, tag.replace("<script ", "<script async ")),
+                        original.replace(tag, "<template>" + tag + "</template>"),
+                        original.replace(tag, "").replace("</head>", tag + "</head>")):
+            path.write_text(changed)
+            with self.subTest(changed=changed), self.assertRaises(SystemExit):
+                verify_swop(self.target)
+        path.write_text(original)
+        helper = self.target / SWOP["CONTROL_RUNTIME_PATH"]
+        helper.write_text("window.__OTT_CONTROL_TRANSPORT_VERSION__=2;")
+        with self.assertRaisesRegex(SystemExit, "version 1"):
+            verify_swop(self.target)
 
     def test_discovery_uses_content_addressed_public_file_and_only_changes_profile_hash(self):
         raw = (self.source / SWOP["CONTROL_DISCOVERY_PATH"]).read_bytes()
@@ -342,7 +366,7 @@ class SwopPublicationTests(unittest.TestCase):
         verify_swop_runtime(self.target)
 
     def test_control_discovery_requires_exact_version_one_capability(self):
-        existing = 'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;'
+        existing = 'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;'
         for marker in ("", "window.__OTT_CONTROL_DISCOVERY_VERSION__=2;",
                        "window.__OTT_CONTROL_DISCOVERY_VERSION__=10;",
                        "window.__OTT_CONTROL_DISCOVERY_VERSION__=1+1;",
@@ -359,16 +383,16 @@ class SwopPublicationTests(unittest.TestCase):
 
     def test_server_epg_requires_exact_version_one_capability(self):
         existing = ('window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; '
-                    'window.__OTT_CONTROL_DISCOVERY_VERSION__=1;')
+                    'window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;')
         for marker in ("", "window.__OTT_HOSTED_EPG_SERVER_VERSION__=2;",
                        "window.__OTT_HOSTED_EPG_SERVER_VERSION__=10;",
                        "window.__OTT_HOSTED_EPG_SERVER_VERSION__=1+1;",
                        'window.__OTT_HOSTED_EPG_SERVER_VERSION__="1";',
-                       "other.window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;"):
+                       "other.window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;"):
             self.runtime(existing + marker)
             with self.subTest(marker=marker), self.assertRaisesRegex(SystemExit, "Hosted server EPG requires"):
                 verify_swop_runtime(self.target)
-        for marker in ("window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;",
+        for marker in ("window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;",
                        "window.__OTT_HOSTED_EPG_SERVER_VERSION__ = 1;",
                        "window.__OTT_HOSTED_EPG_SERVER_VERSION__=1,window.next=true;"):
             self.runtime(existing + marker)
