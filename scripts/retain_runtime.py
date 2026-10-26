@@ -194,7 +194,7 @@ EPG_PROXY_TO = {
 
 # One reviewed hosted-control route addition. Pin the accepted live predecessor;
 # this exception cannot modify any other publication control.
-CONTROL_PROXY_FROM_VERSION = "01M5TMTKNGZ2VBMX21423J3FKM"
+CONTROL_PROXY_FROM_VERSION = "01M5TYPGY49B67T3QAW261838X"
 CONTROL_PROXY_FROM = EPG_PROXY_TO
 CONTROL_PROXY_TO = {
     "size": 1149, "hash": "b6d6f3efd4620a2a83f15775266bc6ef5bad824a2fa32752f6c4853174ca2329",
