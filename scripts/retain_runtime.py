@@ -17,7 +17,9 @@ from urllib import error, parse, request
 
 from demo_media import verify_demo
 from msx import verify_msx
-from swop import GRAPH_ASSETS, GRAPH_PATH, runtime_graph, verify_swop, verify_swop_runtime
+from swop import (CONTROL_DISCOVERY_PATH, CONTROL_DISCOVERY_PATTERN, MAX_DISCOVERY_BYTES,
+                  GRAPH_ASSETS, GRAPH_PATH, runtime_graph, validate_control_discovery,
+                  verify_swop, verify_swop_runtime)
 
 
 
@@ -39,12 +41,14 @@ def https_handler():
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_FILES = 2000
-MAX_GRAPHS = 16
+MAX_GRAPHS = 32
+MAX_DISCOVERIES = 16
 MAX_FILE_BYTES = 2_000_000
 MAX_GRAPH_BYTES = 8_000_000
 MAX_TOTAL_BYTES = 32_000_000
 MAX_INVENTORY_BYTES = 4_000_000
 JS_MIME = "text/javascript; charset=utf-8"
+JSON_MIME = "application/json; charset=utf-8"
 TOKEN = re.compile(r"[A-Za-z0-9_-]{1,128}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -95,7 +99,10 @@ class OwnerReader:
 
     def __call__(self, suffix, limit=MAX_INVENTORY_BYTES):
         require(suffix in ("", "/files", "/files/.herenow/proxy.json")
-                or suffix.startswith("/files/hosted-runtime/"), "Unexpected owner endpoint")
+                or suffix in DEMO_MIME_ENDPOINTS
+                or suffix.startswith("/files/hosted-runtime/")
+                or (suffix.startswith("/files/") and CONTROL_DISCOVERY_PATTERN.fullmatch(suffix[7:])),
+                "Unexpected owner endpoint")
         try:
             req = request.Request(self.base + suffix, headers=self.headers, method="GET")
             with self.opener.open(req, timeout=30) as response:
@@ -185,24 +192,76 @@ EPG_PROXY_TO = {
 }
 
 
+# One reviewed hosted-control route addition. Pin the accepted live predecessor;
+# this exception cannot modify any other publication control.
+CONTROL_PROXY_FROM_VERSION = "01M5TYPGY49B67T3QAW261838X"
+CONTROL_PROXY_FROM = EPG_PROXY_TO
+CONTROL_PROXY_TO = {
+    "size": 1149, "hash": "b6d6f3efd4620a2a83f15775266bc6ef5bad824a2fa32752f6c4853174ca2329",
+    "contentType": "application/json; charset=utf-8",
+}
+
+# The reviewed predecessor used file(1) fallback MIME types for these unchanged
+# demo bytes. Only this exact owner version may migrate to the publisher's HLS
+# types; no caller-provided inventory or broad MIME exception authorizes it.
+DEMO_MIME_FROM_VERSION = "01M5NVXM5S6GNY3RFA11WGRJ3H"
+DEMO_MIME_FROM = {
+    name: {"size": size, "hash": digest,
+           "contentType": "text/plain" if name.endswith(".m3u8") else "application/octet-stream"}
+    for name, size, digest in (
+        ("demo/pattern.m3u8", 475, "7ab79f27e38aea394ea7da8c47424053fd6fcec20ea855b34c68d7a21d93c159"),
+        ("demo/pattern0.ts", 142316, "1b9e35c2a644b19577a85eb3fd9493aff4418ba08d1da420994ca9ec7af6f15f"),
+        ("demo/pattern1.ts", 165064, "4d6e9da2d65c596189d1bf5eec12a47dc3f38b6a5040330dd9ac1348f188349a"),
+        ("demo/pattern2.ts", 142128, "b1ce10aea01f88068a0c17786db0890a85647655d3f6bf8db8cb70df99cf6a16"),
+        ("demo/pattern3.ts", 166944, "961b0c2ca1a0f5b4faf582302dede5befbb227b2dc5783ededdf92543ddcc974"),
+        ("demo/pattern4.ts", 142692, "a4f36a91fe43109b807795d6fbeb50d478cf980e102cb8b21853ec17c297afb3"),
+        ("demo/pattern5.ts", 158672, "b2111c70a229add3342568846978b6e1ad5ec7bc60c1c7fa4e4e4179c39e2dce"),
+        ("demo/pattern6.ts", 143068, "7f96ffebd7d9a4a218db29c25e90967cdf5d376b910d0ca0c2527bf1c922197b"),
+        ("demo/pattern7.ts", 165816, "2dcd3b82b1beeac2a1efbd4b822dd6989a805b06c3bad38a318dc700f4ea34e9"),
+        ("demo/pattern8.ts", 144196, "7b1a779ee9612ac233517cb4ac58773b24be4961132617b6911a3c1a85ab1fe8"),
+        ("demo/pattern9.ts", 165440, "ffab56de211c2c4ac2f8a39ab4aba39fe2de305ee02bad37b5659eb5b9546bb2"),
+        ("demo/pattern10.ts", 143068, "8ab15f114a109face6aa6404b827817d97884a45876a7393af6faea5824e7b0c"),
+        ("demo/pattern11.ts", 158296, "b12e949f10e6d28aff0d5541cd6a5981248c50eef4fe182fd40555c9dcae0ea0"),
+    )
+}
+DEMO_MIME_TO = {name: item | {"contentType": protected_mime(name)} for name, item in DEMO_MIME_FROM.items()}
+DEMO_MIME_ENDPOINTS = frozenset("/files/" + name for name in DEMO_MIME_FROM)
+
+
 def check_protected(stock, owner, expected_version, reader):
     expected = {name: {**item, "contentType": protected_mime(name)}
                 for name, item in stock["files"].items() if protected(name)}
     current = {name: item for name, item in owner.items() if protected(name)}
     if expected and expected == current:
         return expected, {}
-    approved_cutover = (expected_version == EPG_PROXY_FROM_VERSION
-                        and current.get(EPG_PROXY_PATH) == EPG_PROXY_FROM
-                        and expected.get(EPG_PROXY_PATH) == EPG_PROXY_TO
-                        and (current | {EPG_PROXY_PATH: EPG_PROXY_TO}) == expected)
-    require(approved_cutover,
-            "Owner demo, MSX or publication controls differ from the reviewed stock stage")
-    raw = reader("/files/" + EPG_PROXY_PATH, EPG_PROXY_FROM["size"])
-    require(len(raw) == EPG_PROXY_FROM["size"] and sha256(raw) == EPG_PROXY_FROM["hash"],
-            "Reviewed EPG proxy predecessor byte digest mismatch")
-    return ({name: value for name, value in expected.items() if name != EPG_PROXY_PATH},
-            {EPG_PROXY_PATH: {"from": current[EPG_PROXY_PATH], "to": expected[EPG_PROXY_PATH],
-                              "reviewedFromVersion": expected_version}})
+    approved_demo_mime = (expected_version == DEMO_MIME_FROM_VERSION
+                          and {name: current.get(name) for name in DEMO_MIME_FROM} == DEMO_MIME_FROM
+                          and {name: expected.get(name) for name in DEMO_MIME_TO} == DEMO_MIME_TO
+                          and (current | DEMO_MIME_TO) == expected)
+    if approved_demo_mime:
+        for name, identity in DEMO_MIME_FROM.items():
+            raw = reader("/files/" + name, identity["size"])
+            require(len(raw) == identity["size"] and sha256(raw) == identity["hash"],
+                    "Reviewed demo MIME predecessor byte digest mismatch")
+        return ({name: value for name, value in expected.items() if name not in DEMO_MIME_FROM},
+                {name: {"from": identity, "to": DEMO_MIME_TO[name], "reviewedFromVersion": expected_version}
+                 for name, identity in DEMO_MIME_FROM.items()})
+    for version, before, after in (
+            (EPG_PROXY_FROM_VERSION, EPG_PROXY_FROM, EPG_PROXY_TO),
+            (CONTROL_PROXY_FROM_VERSION, CONTROL_PROXY_FROM, CONTROL_PROXY_TO)):
+        approved_cutover = (expected_version == version
+                            and current.get(EPG_PROXY_PATH) == before
+                            and expected.get(EPG_PROXY_PATH) == after
+                            and (current | {EPG_PROXY_PATH: after}) == expected)
+        if not approved_cutover:
+            continue
+        raw = reader("/files/" + EPG_PROXY_PATH, before["size"])
+        require(len(raw) == before["size"] and sha256(raw) == before["hash"],
+                "Reviewed proxy predecessor byte digest mismatch")
+        return ({name: value for name, value in expected.items() if name != EPG_PROXY_PATH},
+                {EPG_PROXY_PATH: {"from": before, "to": after,
+                                  "reviewedFromVersion": expected_version}})
+    require(False, "Owner demo, MSX or publication controls differ from the reviewed stock stage")
 
 
 def graph_inventory(owner):
@@ -226,12 +285,43 @@ def graph_inventory(owner):
     return groups
 
 
+def checked_graph_union(stock, owner):
+    """Bound the final publication before downloading or writing graph files."""
+    retained = graph_inventory(owner)
+    combined = dict(owner)
+    for name, item in stock["files"].items():
+        if not name.startswith("hosted-runtime/"):
+            continue
+        identity = {**item, "contentType": JS_MIME}
+        require(name not in owner or owner[name] == identity,
+                "Owner graph collides with the new release bytes")
+        combined[name] = identity
+    graph_inventory(combined)
+    return retained
+
+
 def sorted_graph_digest(directory):
     digest = hashlib.sha256(b"ottplay-hosted-runtime-v1\0")
     for relative in sorted(GRAPH_ASSETS):
         raw = (directory / relative).read_bytes()
         digest.update(relative.as_posix().encode() + b"\0" + str(len(raw)).encode() + b"\0" + raw)
     return digest.hexdigest()
+
+
+def discovery_inventory(owner):
+    manifests = {}
+    for name, item in owner.items():
+        if not name.startswith("local/control-discovery"):
+            continue
+        match = CONTROL_DISCOVERY_PATTERN.fullmatch(name)
+        require(match is not None, "Invalid retained control discovery path")
+        require(0 < item["size"] <= MAX_DISCOVERY_BYTES and item["contentType"] == JSON_MIME,
+                "Retained control discovery size or MIME differs from the publisher contract")
+        require(item["hash"] == match[1], "Retained control discovery name does not match its digest")
+        manifests[name] = item
+    require(len(set(manifests) | {CONTROL_DISCOVERY_PATH.as_posix()}) <= MAX_DISCOVERIES,
+            "Retained control discovery count exceeds its bound; explicit retirement review is required")
+    return manifests
 
 
 def create_copy(stage, output, receipt, workspace, slug, expected_version, reader=None):
@@ -264,14 +354,17 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
     checked_metadata(reader, expected_version, slug)
     owner = owner_inventory(reader, expected_version)
     preserved, changed_controls = check_protected(stock, owner, expected_version, reader)
-    groups = graph_inventory(owner)
+    groups = checked_graph_union(stock, owner)
+    discoveries = discovery_inventory(owner)
     output.parent.mkdir(parents=True, exist_ok=True)
     created = False
     try:
         with tempfile.TemporaryDirectory(prefix="ottplay-retained-", dir=output.parent) as temporary:
             cache = Path(temporary)
             graph_records = []
+            discovery_records = []
             additions = {}
+            addition_sources = {}
             for graph, files in sorted(groups.items()):
                 for relative, identity in sorted(files.items()):
                     name = (GRAPH_PATH / graph / relative).as_posix()
@@ -285,10 +378,25 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
                                 "Owner graph collides with the new release bytes")
                     else:
                         additions[name] = {key: identity[key] for key in ("size", "hash")}
+                        addition_sources[name] = target
                 canonical_graph, _ = runtime_graph(cache / graph)
                 algorithm = "canonical" if graph == canonical_graph else "sorted-path"
                 require(graph == canonical_graph or graph == sorted_graph_digest(cache / graph), "Retained graph name does not match its bytes")
                 graph_records.append({"graph": graph, "algorithm": algorithm, "files": files})
+            for name, identity in sorted(discoveries.items()):
+                raw = reader("/files/" + name, identity["size"])
+                require(len(raw) == identity["size"], "Owner control discovery byte size mismatch")
+                validate_control_discovery(raw, identity["hash"])
+                target = cache / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(raw)
+                if name in stock["files"]:
+                    require(stock["files"][name] == {key: identity[key] for key in ("size", "hash")},
+                            "Owner control discovery collides with the new release bytes")
+                else:
+                    additions[name] = {key: identity[key] for key in ("size", "hash")}
+                    addition_sources[name] = target
+                discovery_records.append({"path": name, **identity})
             checked_metadata(reader, expected_version, slug)
             require(owner_inventory(reader, expected_version) == owner, "Owner inventory changed during retention")
             require(snapshot(stage) == stock, "Stock stage changed during retention")
@@ -297,17 +405,16 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
             shutil.copytree(stage, output, dirs_exist_ok=True)
             output.chmod(0o700)
             for name in additions:
-                relative = Path(name).relative_to(GRAPH_PATH)
                 target = output / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with target.open("xb") as stream:
-                    stream.write((cache / relative).read_bytes())
+                    stream.write(addition_sources[name].read_bytes())
             final = snapshot(output)
             expected_dirs = set(stock["directories"])
             for name in additions:
                 expected_dirs.update(parent.as_posix() for parent in PurePosixPath(name).parents if str(parent) != ".")
             require(final["files"] == stock["files"] | additions and set(final["directories"]) == expected_dirs,
-                    "Publication copy differs from stock plus attested graph additions")
+                    "Publication copy differs from stock plus attested graph additions and discovery manifests")
             require(snapshot(stage) == stock, "Stock stage changed while copying")
             checked_metadata(reader, expected_version, slug)
             evidence = {"schema": 1, "workspace": workspace, "slug": slug, "expectedVersionId": expected_version,
@@ -315,7 +422,8 @@ def create_copy(stage, output, receipt, workspace, slug, expected_version, reade
                         "ownerInventorySha256": sha256(canonical(owner)), "publicationSha256": sha256(canonical(final)),
                         "stockUnchanged": True, "exactUnionVerified": True, "protectedFiles": preserved,
                         "changedPublicationControls": changed_controls,
-                        "graphs": graph_records, "addedFiles": additions, "files": final["files"]}
+                        "graphs": graph_records, "discoveryManifests": discovery_records,
+                        "addedFiles": additions, "files": final["files"]}
             receipt.parent.mkdir(parents=True, exist_ok=True)
             with os.fdopen(os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as stream:
                 json.dump(evidence, stream, indent=2, sort_keys=True)

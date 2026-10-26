@@ -23,10 +23,13 @@ def make_stage(target):
     (target / "dist").mkdir()
     (target / "dist/player.js").write_text(
         'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; '
-        'window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;')
+        'window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;')
     for relative in SWOP.REQUIRED_RUNTIME_ASSETS:
         asset = target / relative
         asset.parent.mkdir(parents=True, exist_ok=True)
+        if relative == SWOP.CONTROL_RUNTIME_PATH:
+            asset.write_bytes(b"window.__OTT_CONTROL_TRANSPORT_VERSION__=1;\n")
+            continue
         asset.write_bytes(SWOP.WORKER_HEADER + b"self.onmessage = function () {};\n"
                           if relative == Path("hosted/epg-worker.js") else b"/* fixture */\n")
     SWOP.stage_swop(target, ROOT / "static")
@@ -52,6 +55,19 @@ def make_owner(stage, orders=("canonical", "sorted-path"), version=VERSION):
             bodies["/files/" + name] = raw
     return {"metadata": {"slug": SLUG, "currentVersionId": version, "pendingVersionId": None},
             "listing": {"currentVersionId": version, "files": files}, "bodies": bodies, "graphs": graphs}
+
+
+def add_discovery(fixture, value=None, raw=None):
+    if raw is None:
+        value = value if value is not None else {"version": 1, "servers": [
+            {"id": "previous._ottplay-ctrl._tcp.home.example.", "domain": "home.example",
+             "address": "https://controller.example.com/ott-control"}]}
+        raw = (json.dumps(value, sort_keys=True, indent=2, ensure_ascii=True) + "\n").encode()
+    name = "local/control-discovery." + RETAIN.sha256(raw) + ".json"
+    identity = {"path": name, "size": len(raw), "hash": RETAIN.sha256(raw), "contentType": RETAIN.JSON_MIME}
+    fixture["listing"]["files"].append(identity)
+    fixture["bodies"]["/files/" + name] = raw
+    return identity
 
 
 class Reader:
