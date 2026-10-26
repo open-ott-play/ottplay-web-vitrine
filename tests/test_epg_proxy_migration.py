@@ -3,8 +3,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from retention_fixture import RETAIN, ROOT, Reader, make_owner, make_stage, SLUG
+from retention_fixture import RETAIN, ROOT, SWOP, Reader, make_owner, make_stage, SLUG
 
 
 class EpgProxyMigrationTests(unittest.TestCase):
@@ -14,6 +15,12 @@ class EpgProxyMigrationTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.stage = self.root / "stock"
         make_stage(self.stage)
+        # Keep this historical migration fixture at its reviewed destination.
+        (self.stage / RETAIN.EPG_PROXY_PATH).write_bytes((ROOT / "tests/control-proxy-before.json").read_bytes())
+        historical_proxy = json.loads((ROOT / "tests/control-proxy-before.json").read_bytes())
+        self.proxy_patch = patch.object(SWOP, "EXPECTED_PROXY", historical_proxy)
+        self.proxy_patch.start()
+        self.addCleanup(self.proxy_patch.stop)
         self.original = RETAIN.snapshot(self.stage)
         self.version = RETAIN.EPG_PROXY_FROM_VERSION
         self.fixture = make_owner(self.stage, version=self.version)

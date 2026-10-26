@@ -169,16 +169,21 @@ generations. They neither retry a challenge nor fall back to another origin.
 Legacy-origin failures are not a reason to weaken the zone's access rules. See the
 [publication contract](release-workflow.md#server-epg-cutover-using-the-next-qualified-beta).
 This names-only smoke check verifies generation binding, a current РЕН ТВ HD
-programme with description, and archive rows through the v1 proxy. It does not
-replace the following browser/TV acceptance:
+programme with a nonblank title and a time span containing the check time, valid
+archive rows, and at least one nonblank description in the returned current/archive
+window through the v1 proxy. Source XMLTV metadata legitimately omits descriptions
+for some programmes; a missing current description is reported as
+`currentDescriptionAvailable: false`, without inventing text. Requiring a description
+elsewhere in that bounded window still detects complete description-parser loss.
+It does not replace the following browser/TV acceptance:
 
 - For the default public source, capture requests with fresh browser storage:
   match and programmes use only the two same-origin routes. **No browser request
   to the public XMLTV feed, its redirects or the direct EPG server origin**, and
   no full-feed download/parse worker starts. Measure first usable guide time on
   LG separately from desktop; do not substitute desktop results for TV timing.
-- Verify РЕН ТВ HD identity, current title/description, ordered archive rows and
-  actual archive playback. Compare row fields and shifts against the accepted
+- Verify РЕН ТВ HD identity, current title and description when supplied by the
+  source, ordered archive rows and actual archive playback. Compare row fields and shifts against the accepted
   source generation. Reopening EPG while data is loading must allow navigation
   and Back; video playback must stay responsive.
 - Open diagnostics from the actual published asset, then verify Back and navigation

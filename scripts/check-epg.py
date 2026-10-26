@@ -200,13 +200,16 @@ def check(base):
     now = time.time()
     current = [row for row in programmes if row["time"] <= now < row["time_to"]]
     archived = [row for row in programmes if row["time_to"] <= now]
-    if not current or not current[0]["name"] or not current[0]["descr"]:
-        raise ValueError("РЕН ТВ HD has no current programme with a title and description")
+    if not current or not current[0]["name"].strip():
+        raise ValueError("РЕН ТВ HD has no current programme with a nonblank title")
     if not archived:
         raise ValueError("РЕН ТВ HD has no archived programmes in the requested window")
+    if not any(row["descr"].strip() for row in current + archived):
+        raise ValueError("РЕН ТВ HD has no description in the current/archive window")
     return {"source": SOURCE_ID, "generation": guide["generation"], "fetchedAt": guide["fetchedAt"],
             "stale": guide["stale"], "programmes": len(programmes), "archived": len(archived),
-            "current": current[0]["name"]}
+            "current": current[0]["name"],
+            "currentDescriptionAvailable": bool(current[0]["descr"].strip())}
 
 
 def check_current(base, expected_generation=None):
