@@ -39,6 +39,19 @@ class ControlProxyMigrationTests(unittest.TestCase):
         self.assertFalse(self.receipt.exists())
 
     def test_only_reviewed_control_route_is_added(self):
+        self.assertEqual(self.version, "01M5TYPGY49B67T3QAW261838X")
+        self.assertEqual(RETAIN.CONTROL_PROXY_FROM, {
+            "size": 853,
+            "hash": "95c077854bc77bdcab4b0c5956e7d3675b5571d2dfb314c222f6e8a789135798",
+            "contentType": "application/json; charset=utf-8",
+        })
+        self.assertEqual(RETAIN.CONTROL_PROXY_TO, {
+            "size": 1149,
+            "hash": "b6d6f3efd4620a2a83f15775266bc6ef5bad824a2fa32752f6c4853174ca2329",
+            "contentType": "application/json; charset=utf-8",
+        })
+        self.assertEqual(sum(RETAIN.protected(item["path"])
+                             for item in self.fixture["listing"]["files"]), 19)
         before = json.loads(self.before)
         after = json.loads((self.stage / RETAIN.EPG_PROXY_PATH).read_bytes())
         route = after["proxies"].pop("/ott-control/api/device-transport")
@@ -55,11 +68,13 @@ class ControlProxyMigrationTests(unittest.TestCase):
         self.assertEqual(RETAIN.snapshot(self.output)["files"], self.original["files"] | result["addedFiles"])
 
     def test_different_live_version_cannot_reuse_this_migration(self):
-        self.version = "another-version-with-the-same-legacy-proxy"
-        self.fixture["metadata"]["currentVersionId"] = self.version
-        self.fixture["listing"]["currentVersionId"] = self.version
-        self.rejected()
-        self.assertFalse(any(path.startswith("/files/") for path, _ in self.reader.calls))
+        for version in ("01M5TMTKNGZ2VBMX21423J3FKM", "another-version-with-the-same-legacy-proxy"):
+            with self.subTest(version=version):
+                self.version = version
+                self.fixture["metadata"]["currentVersionId"] = version
+                self.fixture["listing"]["currentVersionId"] = version
+                self.rejected()
+                self.assertFalse(any(path.startswith("/files/") for path, _ in self.reader.calls))
 
     def test_old_proxy_requires_exact_metadata_and_actual_body(self):
         for key, value in (("hash", "0" * 64), ("size", 852), ("contentType", "text/plain")):

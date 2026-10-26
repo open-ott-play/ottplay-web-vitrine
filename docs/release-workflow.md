@@ -181,6 +181,16 @@ there is no user-supplied exception file or general migration switch. The usual
 owner-version comparison also guards finalization. If another publication moves
 the live version before this cutover, stop and review a new source-pinned plan.
 
+The hosted-control route addition is pinned to reviewed owner version
+`01M5TYPGY49B67T3QAW261838X`, which published player `1.1.60-beta.13`.
+Its 19 protected entries are unchanged from the previous accepted owner;
+the proxy predecessor remains exactly 853 bytes with SHA-256
+`95c077854bc77bdcab4b0c5956e7d3675b5571d2dfb314c222f6e8a789135798`.
+Only the reviewed 1149-byte proxy with SHA-256
+`b6d6f3efd4620a2a83f15775266bc6ef5bad824a2fa32752f6c4853174ca2329`
+may replace it. The older owner version and unrelated versions are rejected,
+even if their proxy bytes match. All other protected entries must remain exact.
+
 A second source-pinned reconciliation corrects legacy demo MIME metadata at
 owner version `01M5NVXM5S6GNY3RFA11WGRJ3H`: `demo/pattern.m3u8` changes from
 `text/plain` to `application/vnd.apple.mpegurl`, and exactly `demo/pattern0.ts`
