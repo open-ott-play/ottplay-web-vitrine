@@ -1,0 +1,58 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "apps/v1", "kind": "Deployment",
+      "metadata": {"name": "ottplay-stalker-relay", "namespace": "synology-apps"},
+      "spec": {
+        "replicas": 1, "revisionHistoryLimit": 3,
+        "selector": {"matchLabels": {"app": "ottplay-stalker-relay"}},
+        "template": {
+          "metadata": {
+            "labels": {"app": "ottplay-stalker-relay"},
+            "annotations": {"ottplay/source": @@SOURCE@@, "ottplay/release": @@TAG@@, "ottplay/manifest-sha256": @@MANIFEST_SHA256@@}
+          },
+          "spec": {
+            "automountServiceAccountToken": false,
+            "nodeSelector": {"kubernetes.io/hostname": "h7"},
+            "securityContext": {"runAsNonRoot": true, "runAsUser": 65532, "runAsGroup": 65532, "fsGroup": 65532, "seccompProfile": {"type": "RuntimeDefault"}},
+            "containers": [{
+              "name": "relay", "image": @@IMAGE@@, "imagePullPolicy": "IfNotPresent",
+              "command": ["/app/ottplay-server"],
+              "args": ["--host", "0.0.0.0", "--port", "8080", "--stalker-relay-only", "--stalker-relay-config", "/secret/config.json"],
+              "ports": [{"name": "http", "containerPort": 8080}],
+              "securityContext": {"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": {"drop": ["ALL"]}},
+              "resources": {"requests": {"cpu": @@CPU@@, "memory": @@REQUEST_MEMORY@@}, "limits": {"memory": @@LIMIT_MEMORY@@}},
+              "volumeMounts": [{"name": "relay-config", "mountPath": "/secret", "readOnly": true}],
+              "readinessProbe": {"httpGet": {"path": "/health", "port": "http"}, "periodSeconds": 5, "timeoutSeconds": 2},
+              "livenessProbe": {"httpGet": {"path": "/health", "port": "http"}, "periodSeconds": 30, "timeoutSeconds": 2}
+            }],
+            "volumes": [{"name": "relay-config", "secret": {"secretName": @@SECRET@@, "defaultMode": 288, "items": [{"key": "config.json", "path": "config.json"}]}}]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1", "kind": "Service",
+      "metadata": {"name": "ottplay-stalker-relay", "namespace": "synology-apps"},
+      "spec": {"type": "ClusterIP", "selector": {"app": "ottplay-stalker-relay"}, "ports": [{"name": "http", "port": 8080, "targetPort": "http"}]}
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+      "metadata": {"name": "ottplay-stalker-relay-egress", "namespace": "cloudflared"},
+      "spec": {
+        "podSelector": {"matchLabels": {"app": "cloudflared", "tunnel": "h7"}}, "policyTypes": ["Egress"],
+        "egress": [{"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "synology-apps"}}, "podSelector": {"matchLabels": {"app": "ottplay-stalker-relay"}}}], "ports": [{"protocol": "TCP", "port": 8080}]}]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+      "metadata": {"name": "ottplay-stalker-relay-ingress", "namespace": "synology-apps"},
+      "spec": {
+        "podSelector": {"matchLabels": {"app": "ottplay-stalker-relay"}}, "policyTypes": ["Ingress"],
+        "ingress": [{"from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "cloudflared"}}, "podSelector": {"matchLabels": {"app": "cloudflared", "tunnel": "h7"}}}], "ports": [{"protocol": "TCP", "port": 8080}]}]
+      }
+    }
+  ]
+}
