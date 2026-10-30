@@ -5,7 +5,9 @@ import json
 import os
 from pathlib import Path
 import shutil
+import ssl
 import tempfile
+import traceback
 import unittest
 from unittest.mock import patch
 from urllib import error, request
@@ -361,6 +363,80 @@ class OwnerReaderTests(unittest.TestCase):
             reader("", 4)
         with self.assertRaisesRegex(ValueError, "endpoint"):
             reader("https://untrusted.example", 5)
+
+    def test_timeout_retry_keeps_exact_request_and_discards_partial_body(self):
+        for failure in (TimeoutError("offline-secret"), error.URLError(TimeoutError("offline-secret"))):
+            for partial in (False, True):
+                with self.subTest(failure=type(failure).__name__, partial=partial):
+                    reader = RETAIN.OwnerReader("ottplay", SLUG, "offline-secret")
+                    seen, responses = [], []
+                    class Response(io.BytesIO):
+                        status = 200
+                        def geturl(self):
+                            return seen[-1].full_url
+                        def read(self, size):
+                            if partial and len(seen) == 1:
+                                super().read(2)
+                                raise failure
+                            return super().read(size)
+                    class Opener:
+                        def open(self, req, timeout):
+                            seen.append(req)
+                            if timeout != 30:
+                                raise AssertionError("wrong timeout")
+                            if not partial and len(seen) == 1:
+                                raise failure
+                            response = Response(b"fresh")
+                            responses.append(response)
+                            return response
+                    reader.opener = Opener()
+                    with patch.object(RETAIN.time, "sleep") as sleep:
+                        self.assertEqual(reader("", 5), b"fresh")
+                    self.assertEqual(len(seen), 2)
+                    self.assertIs(seen[0], seen[1])
+                    self.assertEqual(seen[0].get_method(), "GET")
+                    self.assertEqual(seen[0].full_url, reader.base)
+                    self.assertEqual(seen[0].get_header("Authorization"), "Bearer offline-secret")
+                    self.assertTrue(all(response.closed for response in responses))
+                    sleep.assert_called_once_with(0.25)
+
+    def test_timeout_retries_are_bounded_and_sanitized(self):
+        reader = RETAIN.OwnerReader("ottplay", SLUG, "offline-secret")
+        with patch.object(reader.opener, "open", side_effect=TimeoutError("offline-secret")) as opened:
+            with patch.object(RETAIN.time, "sleep") as sleep:
+                with self.assertRaises(ValueError) as caught:
+                    reader("", 1)
+        self.assertEqual(opened.call_count, 3)
+        self.assertEqual([call.args for call in sleep.call_args_list], [(0.25,), (0.5,)])
+        self.assertNotIn("offline-secret", str(caught.exception))
+
+    def test_interrupted_backoff_does_not_expose_timeout_context(self):
+        reader = RETAIN.OwnerReader("ottplay", SLUG, "offline-secret")
+        with patch.object(reader.opener, "open", side_effect=TimeoutError("offline-secret")) as opened:
+            with patch.object(RETAIN.time, "sleep", side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt) as caught:
+                    reader("", 1)
+        self.assertEqual(opened.call_count, 1)
+        self.assertIsNone(caught.exception.__context__)
+        self.assertNotIn("offline-secret", "".join(traceback.format_exception(caught.exception)))
+
+    def test_non_timeout_failures_never_retry(self):
+        failures = [
+            error.HTTPError("https://here.now/owner", code, "offline-secret", {}, None)
+            for code in (301, 302, 307, 401, 403, 429, 500, 503)
+        ] + [error.URLError(ssl.SSLCertVerificationError("offline-secret")),
+             error.URLError("timed out: offline-secret"),
+             ConnectionResetError("offline-secret"), ValueError("offline-secret")]
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__, code=getattr(failure, "code", None)):
+                reader = RETAIN.OwnerReader("ottplay", SLUG, "offline-secret")
+                with patch.object(reader.opener, "open", side_effect=failure) as opened:
+                    with patch.object(RETAIN.time, "sleep") as sleep:
+                        with self.assertRaises(ValueError) as caught:
+                            reader("", 1)
+                self.assertEqual(opened.call_count, 1)
+                sleep.assert_not_called()
+                self.assertNotIn("offline-secret", str(caught.exception))
 
     def test_owner_exception_cannot_expose_credentials(self):
         reader = RETAIN.OwnerReader("ottplay", SLUG, "offline-secret")
