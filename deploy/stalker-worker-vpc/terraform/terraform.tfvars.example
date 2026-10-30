@@ -1,0 +1,10 @@
+# Illustrative identities only. Put real installation variables outside Git.
+account_id          = "00000000000000000000000000000000"
+tunnel_id           = "00000000-0000-0000-0000-000000000000"
+workers_namespace   = "test-account"
+worker_name         = "ottplay-stalker-api"
+backend_ipv4        = "192.0.2.10"
+backend_port        = 8080
+rate_namespace_id   = "92001"
+requests_per_minute = 120
+publish             = false
