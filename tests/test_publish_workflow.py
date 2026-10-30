@@ -28,7 +28,9 @@ class PublishWorkflowContractTests(unittest.TestCase):
         self.assertEqual(workflow["run-name"], "Publish ${{ inputs.tag }} · ${{ inputs.manifest_sha256 }} · from ${{ inputs.expected_version_id }}")
         job = workflow["jobs"]["publish"]
         self.assertEqual(job["environment"], "production")
-        steps = [step for step in job["steps"] if "scripts/prepare-dist.py" in step.get("run", "")]
+        prepare = workflow["jobs"]["prepare"]
+        self.assertNotIn("environment", prepare)
+        steps = [step for step in prepare["steps"] if "scripts/prepare-dist.py" in step.get("run", "")]
         self.assertEqual(len(steps), 1)
         self.assertEqual(steps[0]["env"]["RELEASE_MANIFEST_SHA256"], "${{ inputs.manifest_sha256 }}")
         self.assertEqual(steps[0]["run"], 'python3 scripts/prepare-dist.py "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256" "$RELEASE_CHANNEL"')
@@ -36,6 +38,37 @@ class PublishWorkflowContractTests(unittest.TestCase):
         channel = workflow["on"]["workflow_dispatch"]["inputs"]["release_channel"]
         self.assertEqual(channel, {"description": "Explicit deployment channel; beta requires independent qualification",
                                    "required": True, "type": "choice", "default": "stable", "options": ["stable", "beta"]})
+
+    def test_browsers_and_publisher_receive_the_same_prepared_artifact(self):
+        root = Path(__file__).parents[1]
+        workflow = yaml.safe_load((root / ".github/workflows/publish-herenow.yml").read_text())
+        prepare, browser, publish = (workflow["jobs"][name] for name in ("prepare", "browser", "publish"))
+        self.assertEqual(browser["needs"], ["prepare"])
+        self.assertEqual(publish["needs"], ["prepare", "browser"])
+        self.assertNotIn("always()", publish["if"])
+        self.assertNotIn("continue-on-error", browser)
+        self.assertIs(browser["with"]["force-full"], True)
+        self.assertEqual(browser["with"]["browser-artifact-id"], "${{ needs.prepare.outputs.artifact-id }}")
+        self.assertEqual(browser["with"]["browser-release-channel"], "${{ inputs.release_channel }}")
+        self.assertEqual(browser["with"]["browser-extended"], "${{ inputs.release_channel == 'stable' }}")
+        self.assertIn("needs.prepare.outputs.manifest-sha256", browser["with"]["browser-prepare-command"])
+        artifact = next(step for step in publish["steps"] if str(step.get("uses", "")).startswith("actions/download-artifact@"))
+        self.assertEqual(artifact["with"]["artifact-ids"], browser["with"]["browser-artifact-id"])
+        self.assertNotIn("name", artifact["with"])
+        self.assertFalse(any("prepare-dist.py" in step.get("run", "") for step in publish["steps"]))
+        verification = next(step for step in publish["steps"] if "browser_candidate.py unpack" in step.get("run", ""))
+        self.assertEqual(verification["env"]["CANDIDATE_MANIFEST_SHA256"], "${{ needs.prepare.outputs.manifest-sha256 }}")
+        self.assertFalse(any("secrets." in str(step) for step in prepare["steps"]))
+
+    def test_read_only_qualification_cannot_enter_protected_publishing(self):
+        root = Path(__file__).parents[1]
+        workflow = yaml.safe_load((root / ".github/workflows/publish-herenow.yml").read_text())
+        option = workflow["on"]["workflow_dispatch"]["inputs"]["qualify_only"]
+        self.assertEqual(option["type"], "boolean")
+        self.assertIs(option["default"], False)
+        self.assertIn("!inputs.qualify_only", workflow["jobs"]["publish"]["if"])
+        self.assertIn("github.event.repository.default_branch", workflow["jobs"]["publish"]["if"])
+        self.assertEqual(workflow["jobs"]["publish"]["environment"], "production")
 
     def test_owner_version_is_required_and_reaches_the_real_publisher(self):
         root = Path(__file__).parents[1]

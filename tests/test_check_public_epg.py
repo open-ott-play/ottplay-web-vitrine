@@ -21,7 +21,8 @@ class PublicEpgTests(unittest.TestCase):
         self.stage = Path(temporary.name) / "dist"
         make_stage(self.stage)
         self.result = {"source": "epg-one", "generation": "current-generation", "fetchedAt": 10000000,
-                       "stale": False, "programmes": 3, "archived": 2, "current": "Current"}
+                       "stale": False, "programmes": 3, "archived": 2, "current": "Current",
+                       "currentDescriptionAvailable": False}
 
     def run_check(self, result=None):
         probe = Mock(return_value=self.result if result is None else result)
@@ -35,6 +36,7 @@ class PublicEpgTests(unittest.TestCase):
         result = self.run_check()
         self.assertEqual(result["checkedOrigin"], "https://player.ottplay.here.now")
         self.assertEqual(result["generation"], self.result["generation"])
+        self.assertFalse(result["currentDescriptionAvailable"])
         self.assertEqual(before, {p.relative_to(self.stage): p.read_bytes() for p in self.stage.rglob("*") if p.is_file()})
 
     def test_rejects_stale_expired_and_future_generations(self):
@@ -84,6 +86,7 @@ class PublicEpgTests(unittest.TestCase):
         self.assertNotEqual(origin, PUBLIC["PUBLIC_ORIGIN"])
         self.assertEqual(value["checkedOrigin"], origin)
         self.assertTrue(value["currentEndpointVerified"])
+        self.assertFalse(value["currentDescriptionAvailable"])
 
     def test_cutover_rejects_bad_stock_before_either_network_call(self):
         path = self.stage / ".herenow/proxy.json"

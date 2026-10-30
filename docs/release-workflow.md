@@ -25,8 +25,12 @@ gh workflow run quality-gate.yml
 gh run list --workflow quality-gate.yml
 ```
 
-These checks cover the repository's syntax and workflow contracts. Browser
-playback and production deployment are separate checks.
+These checks cover the repository's syntax and workflow contracts. The publish
+workflow additionally runs [staged browser acceptance](browser-acceptance.md):
+five targets for beta, all 35 targets for stable staging. Its `qualify_only` input
+runs this acceptance without requesting production approval or publishing.
+Browser acceptance receives the exact prepared artifact that the protected
+production job later verifies and publishes.
 
 ## Publishing the player
 
@@ -156,8 +160,10 @@ inventory with it after publishing. The wrapper reconstructs the same copy befor
 its CAS update and removes its temporary copy, receipt and publisher state afterward.
 The strict `swop.py --runtime` command continues to accept only the stock stage.
 
-Retention is bounded at 16 graphs, 2 MB per graph file, 8 MB per graph and 32 MB
-total. Reaching a limit fails closed; it never silently prunes an old URL. Any
+The final union of retained and new stock runtime graphs is bounded at 32 graphs,
+2 MB per graph file, 8 MB per graph and 32 MB total. A graph present in both is
+counted once. These limits are checked before downloading or writing graph files.
+Exceeding a limit fails closed; it never silently prunes an old URL. Any
 future removal or changed publication controls requires a separate reviewed
 reconciliation, not an overwrite flag.
 
@@ -174,6 +180,26 @@ Any other version, byte identity, MIME type or additional control change fails;
 there is no user-supplied exception file or general migration switch. The usual
 owner-version comparison also guards finalization. If another publication moves
 the live version before this cutover, stop and review a new source-pinned plan.
+
+The hosted-control route addition is pinned to reviewed owner version
+`01M5TYPGY49B67T3QAW261838X`, which published player `1.1.60-beta.13`.
+Its 19 protected entries are unchanged from the previous accepted owner;
+the proxy predecessor remains exactly 853 bytes with SHA-256
+`95c077854bc77bdcab4b0c5956e7d3675b5571d2dfb314c222f6e8a789135798`.
+Only the reviewed 1149-byte proxy with SHA-256
+`b6d6f3efd4620a2a83f15775266bc6ef5bad824a2fa32752f6c4853174ca2329`
+may replace it. The older owner version and unrelated versions are rejected,
+even if their proxy bytes match. All other protected entries must remain exact.
+
+A second source-pinned reconciliation corrects legacy demo MIME metadata at
+owner version `01M5NVXM5S6GNY3RFA11WGRJ3H`: `demo/pattern.m3u8` changes from
+`text/plain` to `application/vnd.apple.mpegurl`, and exactly `demo/pattern0.ts`
+through `demo/pattern11.ts` change from `application/octet-stream` to `video/mp2t`.
+All 13 file sizes and SHA-256 hashes are pinned in `retain_runtime.py`; the owner
+bytes are fetched and verified before accepting the copy. The existing publisher
+already emits these HLS types. Every other protected entry must remain identical,
+and `changedPublicationControls` records each metadata-only transition. A different
+version, partial migration, changed bytes or extra file still fails closed.
 
 The wrapper seeds a private temporary `.herenow/state.json` with only that
 reviewed version, slug and absolute publication-copy path. This is the pinned
@@ -239,52 +265,23 @@ routes, embedded secrets, changed upstreams and changed schemas.
 
 ## Home command-server discovery
 
-The public hosted script also sets `window.__OTT_CONTROL_DISCOVERY_URL__` to the
-exact deployment-specific URL `https://www.2560801.xyz/ott-control/api/discovery`.
-The bridge resolves DNS-SD on the configured home network and returns server
-metadata. It is separate from here.now Site Data and the VPortal proxy; neither
-manifest gains another route or collection. No device or installation credential
-belongs in this script or the discovery response.
+The [Home discovery runbook](home-control-discovery.md) is the operator guide for
+the exact public catalog URL, connection/profile setup, descriptor changes,
+published-byte/CORS checks, troubleshooting and rollback. The static catalog
+contains no credentials and does not replace the separate command server.
 
-This deployment opts unconfigured clients into one startup discovery attempt.
-Generic clients without this profile have no personal home-network URL. Bridge
-failure must be nonblocking, and configured clients must preserve their settings.
+Every candidate still requires the upstream
+`window.__OTT_CONTROL_DISCOVERY_VERSION__ = 1` capability marker, a synchronous
+hashed profile and the existing hosted/SWOP/EPG checks. Publishing the profile
+neither deploys the controller nor approves pairing. Existing connection settings
+and deliberately disabled connections must remain unchanged.
 
-Require an accepted upstream candidate with
-`window.__OTT_CONTROL_DISCOVERY_VERSION__ = 1`, in addition to the existing hosted
-and SWOP markers. The marker is a compatibility tripwire, not a substitute for
-testing the emitted player. Keep the profile synchronous and include the entire
-script in its content hash; the seven-file EPG graph remains derived exclusively
-from the accepted upstream bytes.
-
-Before promotion, verify the emitted player against the configured bridge:
-
-- Discovery sends no existing command token, provider key or playlist URL and
-  returns metadata only. Bridge failure leaves EPG, SWOP and playback available.
-- A discovered server creates a pending pairing request. Only explicit operator
-  approval with `ott approve NAME CODE` allows an individual device credential to be
-  applied. Merely loading this Site or discovering an address grants no trust.
-- The trusted bridge returns only controllers matching its configured
-  `public_url`, including the exact HTTPS origin and base path. Reject unrelated
-  DNS-SD targets rather than trusting their own claim to be approved.
-- Existing control settings are preserved unless the user deliberately starts
-  replacement pairing. Cancellation, expiry or changed settings cannot apply a
-  stale approval. A credential from one device must not authorize another.
-- Hosted-browser CORS and LG navigation work at the actual deployment origin.
-  Use a controlled test device and clean up its pending pairing and credential;
-  never exercise a real user's token in public acceptance logs.
-
-Retain the usual EPG, SWOP, demo, MSX and cache acceptance checks. Publishing the
-profile does not deploy the bridge or approve a pairing. Coordinate the new
-source candidate, bridge readiness and publisher revision before the official
-RC, stable and here.now delivery; do not republish an older stable to enable this
-feature ahead of its compatible source release.
-
-Keep core-feature regression checks isolated with saved, disabled control-server
-fixture settings, so startup discovery does not contact a live operator service.
-Do not weaken their retired-infrastructure guards or disable HTTP caching. Test
-automatic discovery separately with a fresh unconfigured client and an exact
-allowlist of the approved discovery and pairing routes, methods and origin.
+Keep ordinary feature regression tests isolated from real control services;
+exercise automatic discovery separately with fresh unconfigured fixtures and
+mocked pairing. Before production, verify the exact catalog bytes and CORS from
+the supported player origins, then follow the qualified release and reviewed
+owner-version publication process above. The runbook adds no release-policy or
+overwrite exception.
 
 ## SWOP pairing
 
@@ -393,9 +390,13 @@ pass before the switch. Immediately after publication the job runs
 `https://player.ottplay.here.now` to prove that the replacement proxy is active.
 Neither command accepts an arbitrary origin or falls back after a failure.
 
-Both checks require matching generations, a current programme with description,
-archive rows and non-stale data. The publication wrapper also rejects a generation
-at least as old as the service's two-hour refresh period, or more than five minutes in the
+Both checks require matching generations, a current programme with a nonblank
+title and a time span containing the check time, valid archive rows, and non-stale
+data. At least one nonblank description must exist in the returned current/archive
+window; future rows do not satisfy this check. XMLTV can legitimately omit the
+current description, so the result reports `currentDescriptionAvailable` rather
+than rejecting or fabricating that metadata. Complete description loss still fails.
+The publication wrapper also rejects a generation at least as old as the service's two-hour refresh period, or more than five minutes in the
 future. Requests ask caches to revalidate. HTTP failures stop the job without retry;
 bounded diagnostics identify the request stage, status and recognized response
 headers without logging queries, cookies or arbitrary response bodies.

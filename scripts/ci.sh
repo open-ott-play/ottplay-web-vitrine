@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 scripts/validate-source.py
+python3 -m ruff check --select E9,F63,F7,F82 scripts tests
 python3 scripts/demo_media.py static
 python3 scripts/msx.py static
 python3 scripts/swop.py static

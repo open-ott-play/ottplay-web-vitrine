@@ -31,3 +31,7 @@ This project provides verified preparation and publication tooling for the hoste
 Release archives and downloaded demo media are untrusted until their provenance, digest and archive paths pass validation. Publishing credentials and SWOP relay secrets remain backend-only. Publication replaces a public site and requires a qualified release and an explicit operator decision. Static hosting cannot replace the separate authenticated media/control backend.
 
 See [security design and validation boundaries](docs/security-design.md).
+
+## Remediation and credit
+
+Assess impact and affected versions, reproduce with synthetic data, implement a fix and regression test, and coordinate disclosure with the reporter. Address publicly known vulnerabilities within 60 days and critical issues as quickly as practical. If a fix needs longer, publish available mitigations and keep the reporter informed. Credit vulnerability reporters in the advisory or release notes unless they request anonymity; do not publish identifying details without agreement.

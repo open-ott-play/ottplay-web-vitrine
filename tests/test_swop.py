@@ -23,7 +23,8 @@ class SwopPublicationTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.source = self.root / "static"
-        for relative in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json"):
+        for relative in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json",
+                         SWOP["CONTROL_DISCOVERY_PATH"].as_posix()):
             destination = self.source / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / "static" / relative, destination)
@@ -31,14 +32,17 @@ class SwopPublicationTests(unittest.TestCase):
         self.target.mkdir()
         (self.target / "index.html").write_text('<!doctype html><html><head><script src="/player-loader.js"></script></head></html>')
 
-    def runtime(self, script='window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;'):
+    def runtime(self, script='window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;'):
         runtime = self.target / "dist/player.js"
         runtime.parent.mkdir(exist_ok=True)
         runtime.write_text(script)
         for relative in SWOP["REQUIRED_RUNTIME_ASSETS"]:
             asset = self.target / relative
             asset.parent.mkdir(parents=True, exist_ok=True)
-            asset.write_bytes(SWOP["WORKER_HEADER"] + b"self.onmessage = function () {};\n" if relative == Path("hosted/epg-worker.js") else b"/* runtime-fixture */\n")
+            if relative == SWOP["CONTROL_RUNTIME_PATH"]:
+                asset.write_bytes(b"window.__OTT_CONTROL_TRANSPORT_VERSION__ = 1;\n")
+            else:
+                asset.write_bytes(SWOP["WORKER_HEADER"] + b"self.onmessage = function () {};\n" if relative == Path("hosted/epg-worker.js") else b"/* runtime-fixture */\n")
         return runtime
 
     def profile(self, target=None):
@@ -79,10 +83,33 @@ class SwopPublicationTests(unittest.TestCase):
         self.assertEqual(profile["diagnosticsUrl"], "/hosted-runtime/" + graph + "/hosted/epg-diagnostics.js")
         self.assertEqual(profile["source"], "https://cdn.epg.one/epg2.xml.gz")
         self.assertEqual(set(json.loads((self.target / ".herenow/proxy.json").read_text())["proxies"]),
-                         {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes"})
+                         {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes", "/ott-control/api/device-transport"})
 
-    def test_discovery_uses_exact_public_endpoint_and_only_changes_profile_hash(self):
-        endpoint = "https://www.2560801.xyz/ott-control/api/discovery"
+    def test_hosted_control_helper_is_verified_and_runs_before_player(self):
+        self.runtime()
+        stage_swop(self.target, self.source)
+        path = self.target / "index.html"
+        original = path.read_text()
+        tag = SWOP["control_bootstrap_tag"](self.target)
+        self.assertLess(original.index("local/hosted.js"), original.index("dist/control-transport.js"))
+        self.assertLess(original.index("dist/control-transport.js"), original.index("/player-loader.js"))
+        for changed in (original.replace(tag, ""), original.replace(tag, tag + tag),
+                        original.replace(tag, tag.replace("<script ", "<script async ")),
+                        original.replace(tag, "<template>" + tag + "</template>"),
+                        original.replace(tag, "").replace("</head>", tag + "</head>")):
+            path.write_text(changed)
+            with self.subTest(changed=changed), self.assertRaises(SystemExit):
+                verify_swop(self.target)
+        path.write_text(original)
+        helper = self.target / SWOP["CONTROL_RUNTIME_PATH"]
+        helper.write_text("window.__OTT_CONTROL_TRANSPORT_VERSION__=2;")
+        with self.assertRaisesRegex(SystemExit, "version 1"):
+            verify_swop(self.target)
+
+    def test_discovery_uses_content_addressed_public_file_and_only_changes_profile_hash(self):
+        raw = (self.source / SWOP["CONTROL_DISCOVERY_PATH"]).read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        endpoint = "https://player.ottplay.here.now/local/control-discovery." + digest + ".json"
         assignment = 'window.__OTT_CONTROL_DISCOVERY_URL__ = "' + endpoint + '";\n'
         self.assertEqual(SWOP["CONTROL_DISCOVERY_URL"], endpoint)
         self.assertEqual(SWOP["CONTROL_DISCOVERY_SCRIPT"], assignment)
@@ -90,6 +117,7 @@ class SwopPublicationTests(unittest.TestCase):
         self.runtime()
         old_graph, old_files = SWOP["runtime_graph"](self.target)
         stage_swop(self.target, self.source)
+        self.assertEqual((self.target / SWOP["CONTROL_DISCOVERY_PATH"]).read_bytes(), raw)
         self.assertEqual(SWOP["runtime_graph"](self.target), (old_graph, old_files))
         script = (self.target / "local/hosted.js").read_text()
         self.assertEqual(script.count(assignment), 1)
@@ -114,10 +142,10 @@ class SwopPublicationTests(unittest.TestCase):
             path = directory / "local/hosted.js"
             original = path.read_text()
             for changed in (original.replace(assignment, ""),
-                            original.replace("https://www.2560801.xyz/", "http://www.2560801.xyz/"),
-                            original.replace("https://www.2560801.xyz/", "https://attacker.example/"),
-                            original.replace("https://www.2560801.xyz/", "https://user:secret@www.2560801.xyz/"),
-                            original.replace("/api/discovery", "/api/discovery?token=unexpected"),
+                            original.replace("https://player.ottplay.here.now/", "http://player.ottplay.here.now/"),
+                            original.replace("https://player.ottplay.here.now/", "https://attacker.example/"),
+                            original.replace("https://player.ottplay.here.now/", "https://user:secret@player.ottplay.here.now/"),
+                            original.replace(".json\";", ".json?token=unexpected\";"),
                             original + assignment,
                             original + "window.extra = true;\n"):
                 path.write_text(changed)
@@ -125,6 +153,73 @@ class SwopPublicationTests(unittest.TestCase):
                     verify_swop(directory, template=template)
             path.write_text(original)
             verify_swop(directory, template=template)
+
+    def test_discovery_manifest_is_exact_pinned_and_stock_rejects_extra_versions(self):
+        path = self.source / SWOP["CONTROL_DISCOVERY_PATH"]
+        raw = path.read_bytes()
+        path.write_bytes(raw + b" ")
+        with self.assertRaisesRegex(SystemExit, "digest"):
+            verify_swop(self.source, template=True)
+        path.write_bytes(raw)
+        extra = self.source / ("local/control-discovery." + "a" * 64 + ".json")
+        extra.write_bytes(raw)
+        with self.assertRaisesRegex(SystemExit, "unexpected manifests"):
+            verify_swop(self.source, template=True)
+        extra.unlink()
+        verify_swop(self.source, template=True)
+
+    def test_discovery_rejects_untrusted_schema_addresses_and_duplicates(self):
+        valid = json.loads((self.source / SWOP["CONTROL_DISCOVERY_PATH"]).read_bytes())
+        values = [valid | {"token": "must-not-publish"}, valid | {"pairing_url": "https://other.example/api/pairings"},
+                  valid | {"version": True}, valid | {"version": 2}, valid | {"servers": {}},
+                  valid | {"servers": valid["servers"] * 17}, valid | {"servers": valid["servers"] * 2}]
+        for field, content in (("password", "must-not-publish"), ("domain", "localhost"),
+                               ("id", "unrelated._ottplay-ctrl._tcp.other.example."),
+                               ("id", "HOME._ottplay-ctrl._tcp.alvit.cf."),
+                               ("id", "home_bad._ottplay-ctrl._tcp.alvit.cf."),
+                               ("address", None)):
+            values.append(valid | {"servers": [valid["servers"][0] | {field: content}]})
+        long_domain = ".".join(["a" * 63] * 3 + ["example"])
+        values.append(valid | {"servers": [valid["servers"][0] | {
+            "domain": long_domain, "id": "b" * 63 + "._ottplay-ctrl._tcp." + long_domain + "."}]})
+        for address in ("http://controller.example.com", "https://user:secret@controller.example.com",
+                        "https://controller.example.com?token=secret", "https://controller.example.com#fragment",
+                        "https://controller.example.com?", "https://controller.example.com#",
+                        "https://controller.example.com/../control", "https://controller.example.com/%2e%2e/control",
+                        "https://controller.example.com:99999", "https://controller.example.com:443x",
+                        "https://controller.example.com\\@attacker.example", "https://controller.example.com\n",
+                        "https://127.0.0.1/control", "https://127.1/control", "https://0x7f.1/control",
+                        "https://0177.0.0.01/control", "https://169.254.169.254/", "https://controller.local/control",
+                        "https://controller.home.arpa/control", "https://controller.example.com/control/"):
+            values.append(valid | {"servers": [valid["servers"][0] | {"address": address}]})
+        for value in values:
+            raw = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                SWOP["validate_control_discovery"](raw, hashlib.sha256(raw).hexdigest())
+
+    def test_discovery_rejects_duplicate_keys_noncanonical_bytes_and_oversize(self):
+        for raw in (b'{"version":1,"version":1,"servers":[]}', b'{"version":1,"servers":[]}',
+                    b'\xff', b' ' * (SWOP["MAX_DISCOVERY_BYTES"] + 1)):
+            with self.subTest(size=len(raw)), self.assertRaises(ValueError):
+                SWOP["validate_control_discovery"](raw, hashlib.sha256(raw).hexdigest())
+
+    def test_discovery_accepts_empty_catalog_and_sixteen_distinct_public_bases(self):
+        for count in (0, 16):
+            value = {"version": 1, "servers": [
+                {"id": f"home{i}._ottplay-ctrl._tcp.home.example.", "domain": "home.example",
+                 "address": f"https://controller{i}.example.com:8443/ott-control"} for i in range(count)]}
+            raw = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+            self.assertEqual(SWOP["validate_control_discovery"](raw, hashlib.sha256(raw).hexdigest()), value)
+
+    def test_staging_rejects_existing_discovery_namespace_before_writing(self):
+        self.runtime()
+        (self.target / "local").mkdir()
+        conflict = self.target / "local/control-discovery.unreviewed.json"
+        conflict.write_text("do not overwrite")
+        before = {p.relative_to(self.target): p.read_bytes() for p in self.target.rglob("*") if p.is_file()}
+        with self.assertRaisesRegex(SystemExit, "repository-owned control discovery"):
+            stage_swop(self.target, self.source)
+        self.assertEqual({p.relative_to(self.target): p.read_bytes() for p in self.target.rglob("*") if p.is_file()}, before)
 
     def test_rejects_leaked_credentials_and_changed_upstreams(self):
         path = self.source / ".herenow/proxy.json"
@@ -231,7 +326,8 @@ class SwopPublicationTests(unittest.TestCase):
             verify_swop(self.source, template=True)
 
     def test_rejects_file_and_parent_symlinks(self):
-        for relative in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json", "local", ".herenow"):
+        for relative in ("local/swop.json", "local/hosted.js", ".herenow/proxy.json", ".herenow/data.json",
+                         SWOP["CONTROL_DISCOVERY_PATH"].as_posix(), "local", ".herenow"):
             path = self.source / relative
             original = path.with_name(path.name + ".original")
             path.rename(original)
@@ -270,7 +366,7 @@ class SwopPublicationTests(unittest.TestCase):
         verify_swop_runtime(self.target)
 
     def test_control_discovery_requires_exact_version_one_capability(self):
-        existing = 'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;'
+        existing = 'window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;'
         for marker in ("", "window.__OTT_CONTROL_DISCOVERY_VERSION__=2;",
                        "window.__OTT_CONTROL_DISCOVERY_VERSION__=10;",
                        "window.__OTT_CONTROL_DISCOVERY_VERSION__=1+1;",
@@ -287,16 +383,16 @@ class SwopPublicationTests(unittest.TestCase):
 
     def test_server_epg_requires_exact_version_one_capability(self):
         existing = ('window.__OTTPLAY_HOSTED_PROTOCOL__="hosted-profile-v1"; var protocol="ottplay.swop.v2"; '
-                    'window.__OTT_CONTROL_DISCOVERY_VERSION__=1;')
+                    'window.__OTT_CONTROL_DISCOVERY_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;')
         for marker in ("", "window.__OTT_HOSTED_EPG_SERVER_VERSION__=2;",
                        "window.__OTT_HOSTED_EPG_SERVER_VERSION__=10;",
                        "window.__OTT_HOSTED_EPG_SERVER_VERSION__=1+1;",
                        'window.__OTT_HOSTED_EPG_SERVER_VERSION__="1";',
-                       "other.window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;"):
+                       "other.window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;"):
             self.runtime(existing + marker)
             with self.subTest(marker=marker), self.assertRaisesRegex(SystemExit, "Hosted server EPG requires"):
                 verify_swop_runtime(self.target)
-        for marker in ("window.__OTT_HOSTED_EPG_SERVER_VERSION__=1;",
+        for marker in ("window.__OTT_HOSTED_EPG_SERVER_VERSION__=1; window.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__=1;",
                        "window.__OTT_HOSTED_EPG_SERVER_VERSION__ = 1;",
                        "window.__OTT_HOSTED_EPG_SERVER_VERSION__=1,window.next=true;"):
             self.runtime(existing + marker)

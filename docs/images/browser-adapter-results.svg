@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="570" viewBox="0 0 1120 570" role="img" aria-labelledby="title desc">
+<title id="title">Local browser adapter results and required deployment matrix</title>
+<desc id="desc">On the already staged public 1.1.54-beta.12 fixture, six scenarios passed in each of Chromium, Firefox and WebKit on macOS. These eighteen local scenario executions do not constitute hosted release qualification. Beta requires five targets and stable staging requires thirty-five targets.</desc>
+<rect width="1120" height="570" rx="24" fill="#101d35"/>
+<g font-family="system-ui, sans-serif">
+<text x="48" y="56" fill="#7be0c5" font-size="15" font-weight="700" letter-spacing="2">OBSERVED RESULTS · LOCAL ADAPTER DEVELOPMENT</text>
+<text x="48" y="104" fill="white" font-size="32" font-weight="700">Six real scenarios in each engine</text>
+<text x="48" y="137" fill="#bacbe2" font-size="17">macOS · Playwright 1.64.0 · staged public player 1.1.54-beta.12 · 15 October 2026</text>
+<text x="48" y="199" fill="#dce7f5" font-size="19">Chromium 156</text><rect x="260" y="176" width="640" height="36" rx="9" fill="#21bcb0"/><text x="926" y="201" fill="#fff" font-size="22" font-weight="700">6 / 6</text>
+<text x="48" y="259" fill="#dce7f5" font-size="19">Firefox 157</text><rect x="260" y="236" width="640" height="36" rx="9" fill="#f1a758"/><text x="926" y="261" fill="#fff" font-size="22" font-weight="700">6 / 6</text>
+<text x="48" y="319" fill="#dce7f5" font-size="19">WebKit 27.2</text><rect x="260" y="296" width="640" height="36" rx="9" fill="#9e8af2"/><text x="926" y="321" fill="#fff" font-size="22" font-weight="700">6 / 6</text>
+<path d="M260 349 H900" stroke="#647590"/><g fill="#9aafcb" font-size="14"><text x="255" y="371">0</text><text x="576" y="371">3</text><text x="895" y="371">6</text><text x="420" y="399">Passing scenarios per local browser</text></g>
+<rect x="48" y="431" width="1024" height="96" rx="14" fill="#253550"/>
+<text x="70" y="463" fill="#f4cb7e" font-size="18" font-weight="700">Deployment policy is a separate requirement</text>
+<text x="70" y="493" fill="#dce7f5" font-size="17">Beta: 5 hosted targets · Stable staging: 35 hosted targets · Every selected target must pass.</text>
+<text x="48" y="553" fill="#9fb3cf" font-size="14">Snapshot of adapter verification, not a production deployment or a completed hosted release qualification.</text>
+</g></svg>

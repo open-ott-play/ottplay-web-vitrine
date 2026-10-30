@@ -1,5 +1,13 @@
 # ottplay-web-vitrine
 
+[![OTT-play FOSS channel browser in perspective](docs/images/hero.png)](docs/images/studio-2026-default.png)
+
+*Illustrative Studio 2026 screenshot from the upstream FOSS player, using synthetic
+channel and programme fixtures. The deployed web build may differ.
+[Original and image provenance](docs/images/README.md).*
+
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15563/badge)](https://www.bestpractices.dev/projects/15563)
+
 Public **static** OttPlay FOSS web player hosted on [here.now](https://here.now).
 
 **Live demo:** https://player.ottplay.here.now/
@@ -9,7 +17,7 @@ Upstream player builds: [`open-ott-play/ottplay-foss`](https://github.com/open-o
 <!-- ci-release-process:start -->
 ## CI and deployment
 
-See [CI and deployment workflow](docs/release-workflow.md) for required checks and local commands. This repository uses validation-only policy; application release channels do not apply.
+See [CI and deployment workflow](docs/release-workflow.md) for required checks and local commands. This repository validates and publishes an accepted upstream player release; it does not create application release tags. Publication uses the upstream beta or stable channel and requires [staged browser acceptance](docs/browser-acceptance.md).
 <!-- ci-release-process:end -->
 
 ## Why this exists
@@ -28,12 +36,11 @@ Yes — publish the static frontend to a stable here.now workspace URL and expli
 | here.now workspace `ottplay` | Hosts the Site at label **`player`** → `https://player.ottplay.here.now/` |
 | ottplay-foss releases | Source of truth for the built web bundle |
 
-```text
-accepted ottplay-foss release  →  verify and unpack ottplay-foss-dist.tar.gz
-                           →  add checksum-pinned static/demo/ media
-                           →  here.now publish (workspace ottplay)
-                           →  https://player.ottplay.here.now/
-```
+![Accepted release, staged candidate, real browser acceptance and protected exact-byte publication.](docs/images/staged-browser-process.svg)
+
+See [staged browser acceptance](docs/browser-acceptance.md) for the six scenarios,
+5/35-target channel policy, artifact verification and read-only qualification.
+
 
 ## Limits (static host)
 
@@ -45,8 +52,8 @@ accepted ottplay-foss release  →  verify and unpack ottplay-foss-dist.tar.gz
 - SWOP text entry uses encrypted pairing records in here.now Site Data. VPortal uses
   a fixed here.now proxy directly to the approved provider. These player features
   require no separately operated k3s service, private Cloudflare Worker or tunnel.
-- Optional home command-server discovery uses the deployment-specific HTTPS
-  bridge described below. It does not supply a command credential or grant control.
+- Optional home command-server discovery reads a public static catalog on this
+  Site. The separate Home controller issues credentials only after pairing approval.
 
 ## Shared demo media
 
@@ -84,27 +91,19 @@ their separate transport configuration.
 
 ### Home command-server discovery
 
-The same synchronous profile sets `window.__OTT_CONTROL_DISCOVERY_URL__` to
-`https://www.2560801.xyz/ott-control/api/discovery`. This public endpoint returns
-DNS-SD server metadata from the configured home network. A hosted browser cannot
-query that network's DNS directly; native and local-server clients use their own
-system DNS through their discovery implementation.
+The synchronous profile points to a fingerprinted public JSON catalog on
+`https://player.ottplay.here.now/`. It contains reviewed server identities and
+addresses only; the actual Home command server remains at
+`https://www.2560801.xyz/ott-control`.
 
-With this deployment profile, a compatible player attempts discovery at startup
-when no command server is configured. Existing settings are preserved. A missing
-or unavailable bridge does not block the player; the user can retry discovery
-from command-server settings.
+An unconfigured compatible player can find the server and request pairing.
+Existing connections and deliberate disconnects stay unchanged. Discovery does
+not grant control: the operator approves the player's displayed code with
+`ott approve NAME CODE`. A missing catalog does not block playback, EPG or SWOP.
 
-Discovery is an optional control feature backed by the separately operated home
-bridge. Playback, EPG and SWOP do not depend on that bridge. Finding an address is
-not permission to control the player: pairing requires explicit approval with
-`ott approve NAME CODE` and issues an individual device credential. Existing command
-credentials, provider passwords and playlist URLs must not be sent to discovery
-or included in the public profile. See the [control discovery acceptance checks](docs/release-workflow.md#home-command-server-discovery).
-
-The publisher requires the upstream `window.__OTT_CONTROL_DISCOVERY_VERSION__ = 1`
-capability marker before enabling this profile. Do not deploy an older player
-with the new profile or infer compatibility from a release tag alone.
+Use the [Home discovery runbook](docs/home-control-discovery.md) for the exact
+catalog URL, installation/profile requirements, connection examples, qualified
+beta deployment, CORS/cache checks, troubleshooting and rollback.
 
 ### Hosted EPG and pairing assets
 
@@ -218,3 +217,7 @@ MIT
 See [contribution and test requirements](CONTRIBUTING.md), the
 [security reporting policy](SECURITY.md), [security design](docs/security-design.md),
 and the [OpenSSF evidence and remaining criteria](docs/openssf-evidence.md).
+
+## Community and security evidence
+
+See [contributing](CONTRIBUTING.md), [governance](GOVERNANCE.md), the [Code of Conduct](CODE_OF_CONDUCT.md), [roadmap](ROADMAP.md) and [OpenSSF evidence](docs/openssf-evidence.md). The evidence index distinguishes supported security profiles, actual test results and remaining Silver requirements.

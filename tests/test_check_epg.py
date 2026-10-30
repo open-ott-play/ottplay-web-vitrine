@@ -50,6 +50,7 @@ class EpgSmokeTests(unittest.TestCase):
         self.assertEqual(result["programmes"], 2)
         self.assertEqual(result["archived"], 1)
         self.assertEqual(result["current"], "Current")
+        self.assertTrue(result["currentDescriptionAvailable"])
         match, guide = self.requests
         self.assertEqual(match.get_header("Cache-control"), "no-cache")
         self.assertEqual(guide.get_header("Cache-control"), "no-cache")
@@ -70,6 +71,36 @@ class EpgSmokeTests(unittest.TestCase):
                                  ({**original, "rows": [original["rows"][1]]}, "no archived")):
             self.guide = changed
             with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                self.run_check()
+
+    def test_current_description_is_optional_when_archive_has_source_description(self):
+        for description in ("", " \t\n"):
+            with self.subTest(description=description):
+                self.guide["rows"][1]["descr"] = description
+                result = self.run_check()
+                self.assertEqual(result["current"], "Current")
+                self.assertFalse(result["currentDescriptionAvailable"])
+                self.assertEqual(self.guide["rows"][1]["descr"], description)
+
+    def test_rejects_description_loss_even_when_future_description_exists(self):
+        for row in self.guide["rows"]:
+            row["descr"] = " \t"
+        self.guide["rows"].append(
+            {"time": 110, "time_to": 150, "name": "Future", "descr": "Future description"})
+        with self.assertRaisesRegex(ValueError, "no description in the current/archive window"):
+            self.run_check()
+
+    def test_rejects_blank_current_title_missing_current_span_and_invalid_row_types(self):
+        original = copy.deepcopy(self.guide)
+        for changed, message in (({"name": " \t"}, "nonblank title"),
+                                 ({"time": 101}, "no current"),
+                                 ({"time_to": 100}, "no current"),
+                                 ({"time": "90"}, "row is invalid"),
+                                 ({"time_to": True}, "row is invalid"),
+                                 ({"descr": None}, "row is invalid")):
+            self.guide = copy.deepcopy(original)
+            self.guide["rows"][1].update(changed)
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, message):
                 self.run_check()
 
     def test_does_not_send_requests_to_credentialed_or_non_origin_urls(self):

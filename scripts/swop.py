@@ -1,11 +1,13 @@
 """Stage and verify the reviewed here.now deployment profile."""
 import hashlib
 from html.parser import HTMLParser
+import ipaddress
 import json
 from pathlib import Path
 import re
 import shutil
 import sys
+from urllib.parse import urlsplit
 
 
 CONFIG_PATH = Path("local/swop.json")
@@ -15,7 +17,12 @@ DATA_PATH = Path(".herenow/data.json")
 EXPECTED_CONFIG = {}
 PROVIDER_URL = "http://cd3c21307c36.vportalu.net/api/v1/"
 EPG_API_URL = "https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1"
-CONTROL_DISCOVERY_URL = "https://www.2560801.xyz/ott-control/api/discovery"
+CONTROL_RUNTIME_PATH = Path("dist/control-transport.js")
+CONTROL_DISCOVERY_SHA256 = "17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497"
+CONTROL_DISCOVERY_PATH = Path("local/control-discovery." + CONTROL_DISCOVERY_SHA256 + ".json")
+CONTROL_DISCOVERY_PATTERN = re.compile(r"local/control-discovery\.([0-9a-f]{64})\.json")
+MAX_DISCOVERY_BYTES = 8192
+CONTROL_DISCOVERY_URL = "https://player.ottplay.here.now/" + CONTROL_DISCOVERY_PATH.as_posix()
 CONTROL_DISCOVERY_SCRIPT = "window.__OTT_CONTROL_DISCOVERY_URL__ = " + json.dumps(CONTROL_DISCOVERY_URL) + ";\n"
 CONTROL_DISCOVERY_CAPABILITY = re.compile(
     rb"(?<![A-Za-z0-9_$.])window\.__OTT_CONTROL_DISCOVERY_VERSION__\s*=\s*1(?=\s*(?:[;,}]|$))"
@@ -25,6 +32,11 @@ EPG_SERVER_CAPABILITY = re.compile(
 )
 HOSTED_CONFIG = {
     "version": 1,
+    "controlTransport": {
+        "version": 1,
+        "endpoint": "/ott-control/api/device-transport",
+        "bases": ["https://player.ottplay.here.now/ott-control", "https://www.2560801.xyz/ott-control"],
+    },
     "epg": {
         "mode": "server",
         "apiBase": "/epg/v1",
@@ -44,6 +56,12 @@ HOSTED_CONFIG = {
 }
 EXPECTED_PROXY = {
     "proxies": {
+        "/ott-control/api/device-transport": {
+            "upstream": "https://www.2560801.xyz/ott-control/api/device-transport",
+            "method": "POST",
+            "headers": {"Content-Type": "application/json", "Accept": "application/json"},
+            "rateLimit": "72000/hour/ip",
+        },
         "/epg/v1/match": {
             "upstream": EPG_API_URL + "/match",
             "method": "POST",
@@ -100,6 +118,7 @@ GRAPH_ASSETS = (
     Path("hosted/epg-diagnostics.js"),
 )
 REQUIRED_RUNTIME_ASSETS = (
+    CONTROL_RUNTIME_PATH,
     *GRAPH_ASSETS,
     Path("swop-input/index.html"),
     Path("swop-input/app.js"),
@@ -133,6 +152,76 @@ def _read_json(directory, relative, label):
         return json.loads(path.read_text(), object_pairs_hook=_unique_object)
     except (UnicodeError, ValueError):
         raise SystemExit(f"{label} must contain valid JSON without duplicate keys") from None
+
+
+def validate_control_discovery(raw, digest):
+    """Accept only bounded public descriptors whose immutable name binds bytes."""
+    if not 0 < len(raw) <= MAX_DISCOVERY_BYTES or hashlib.sha256(raw).hexdigest() != digest:
+        raise ValueError("Control discovery size or content digest is invalid")
+    try:
+        value = json.loads(raw, object_pairs_hook=_unique_object)
+    except (UnicodeError, ValueError):
+        raise ValueError("Control discovery must contain valid JSON without duplicate keys") from None
+    if (not isinstance(value, dict) or set(value) != {"version", "servers"}
+            or type(value["version"]) is not int or value["version"] != 1
+            or not isinstance(value["servers"], list) or len(value["servers"]) > 16):
+        raise ValueError("Control discovery must contain version 1 and at most 16 servers")
+    ids, addresses = set(), set()
+    dns_label = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+    for server in value["servers"]:
+        if (not isinstance(server, dict) or set(server) != {"id", "domain", "address"}
+                or not all(isinstance(item, str) for item in server.values())):
+            raise ValueError("Control discovery servers must contain only id, domain and address")
+        identifier, domain, address = (server[key] for key in ("id", "domain", "address"))
+        if (len(domain) > 253 or len(identifier) > 254
+                or not re.fullmatch(dns_label + r"(?:\." + dns_label + r")+", domain)
+                or not re.fullmatch(dns_label + r"\._ottplay-ctrl\._tcp\." + re.escape(domain) + r"\.", identifier)):
+            raise ValueError("Control discovery ID or domain is not a canonical DNS-SD descriptor")
+        if not 0 < len(address) <= 1024 or re.search(r"[^\x21-\x7e]", address):
+            raise ValueError("Control discovery address is not a public HTTPS base")
+        try:
+            url = urlsplit(address)
+            host, port = url.hostname or "", url.port
+        except ValueError:
+            raise ValueError("Control discovery address is not a public HTTPS base") from None
+        if (url.scheme != "https" or url.username is not None or url.password is not None
+                or url.query or url.fragment or "?" in address or "#" in address
+                or not re.fullmatch(dns_label + r"(?:\." + dns_label + r")+", host)
+                or host.endswith((".localhost", ".local", ".internal", ".lan", ".home", ".home.arpa"))
+                or (port is not None and not 1 <= port <= 65535)
+                or url.netloc != host + (":" + str(port) if port is not None else "")
+                or not re.fullmatch(r"(?:/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)*", url.path)
+                or any(part in (".", "..") for part in url.path.split("/"))):
+            raise ValueError("Control discovery address is not a public HTTPS base")
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            ip = None
+        if ip is not None and not ip.is_global:
+            raise ValueError("Control discovery address must not expose a private IP")
+        if ip is None and re.fullmatch(r"(?:0x[0-9a-f]+|[0-9]+)", host.rsplit(".", 1)[-1]):
+            raise ValueError("Control discovery address must not use an alternate numeric IP spelling")
+        if identifier in ids or address in addresses:
+            raise ValueError("Control discovery contains duplicate servers")
+        ids.add(identifier)
+        addresses.add(address)
+    canonical = (json.dumps(value, sort_keys=True, indent=2, ensure_ascii=True) + "\n").encode()
+    if raw != canonical:
+        raise ValueError("Control discovery must use canonical sorted UTF-8 JSON")
+    return value
+
+
+def verify_control_discovery(directory):
+    path = _regular_file(directory, CONTROL_DISCOVERY_PATH, "Control discovery manifest")
+    if path.stat().st_size > MAX_DISCOVERY_BYTES:
+        raise SystemExit("Control discovery manifest is too large")
+    manifests = {entry.name for entry in path.parent.iterdir() if entry.name.startswith("control-discovery")}
+    if manifests != {CONTROL_DISCOVERY_PATH.name}:
+        raise SystemExit("Stock control discovery contains unexpected manifests")
+    try:
+        validate_control_discovery(path.read_bytes(), CONTROL_DISCOVERY_SHA256)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
 
 
 def runtime_graph(directory):
@@ -169,6 +258,15 @@ def staged_hosted_script(graph):
 def bootstrap_tag(script):
     digest = hashlib.sha256(script.encode()).hexdigest()
     return '<script src="/local/hosted.js?v=' + digest + '"></script>'
+
+
+def control_bootstrap_tag(directory):
+    runtime = _regular_file(directory, CONTROL_RUNTIME_PATH, "Hosted control runtime")
+    raw = runtime.read_bytes()
+    if not re.search(rb"__OTT_CONTROL_TRANSPORT_VERSION__\s*=\s*1\b", raw):
+        raise SystemExit("Hosted control requires its version 1 transport runtime")
+    digest = hashlib.sha256(raw).hexdigest()
+    return '<script src="/' + CONTROL_RUNTIME_PATH.as_posix() + '?v=' + digest + '"></script>'
 
 
 class _BootstrapParser(HTMLParser):
@@ -222,7 +320,15 @@ def _verify_bootstrap_document(document, tag):
 
 def verify_hosted_bootstrap(directory, script):
     path = _regular_file(directory, Path("index.html"), "Hosted bootstrap")
-    _verify_bootstrap_document(path.read_text(), bootstrap_tag(script))
+    document = path.read_text()
+    _verify_bootstrap_document(document, bootstrap_tag(script))
+    tag = control_bootstrap_tag(directory)
+    parser = _BootstrapParser()
+    parser.feed(document)
+    if (document.count(CONTROL_RUNTIME_PATH.as_posix()) != 1 or len(parser.scripts) < 2
+            or parser.scripts[1][0] != tag[:-9]
+            or parser.scripts[1][1] not in {("html", "head"), ("head",)}):
+        raise SystemExit("Hosted control runtime must load synchronously after the profile")
 
 
 def verify_runtime_graph(directory, graph, contents):
@@ -247,6 +353,7 @@ def verify_runtime_graph(directory, graph, contents):
 
 
 def verify_swop(directory, *, template=False):
+    verify_control_discovery(directory)
     if _read_json(directory, CONFIG_PATH, "SWOP public configuration") != EXPECTED_CONFIG:
         raise SystemExit("SWOP public configuration must be empty; the hosted profile selects Site Data")
     if _read_json(directory, PROXY_PATH, "SWOP proxy manifest") != EXPECTED_PROXY:
@@ -284,6 +391,8 @@ def verify_swop_runtime(directory):
         raise SystemExit("Hosted control discovery requires a version 1 release capability marker")
     if not EPG_SERVER_CAPABILITY.search(script):
         raise SystemExit("Hosted server EPG requires a version 1 release capability marker")
+    if not re.search(rb"(?<![A-Za-z0-9_$.])window\.__OTT_CONTROL_TRANSPORT_CLIENT_VERSION__\s*=\s*1(?=\s*(?:[;,}]|$))", script):
+        raise SystemExit("Hosted control requires a version 1 client transport")
     for relative in REQUIRED_RUNTIME_ASSETS:
         path = _regular_file(directory, relative, "Hosted runtime asset " + relative.as_posix())
         if not path.stat().st_size:
@@ -295,13 +404,15 @@ def stage_swop(directory, source):
     """Stage repository-owned config and load it before the upstream bootstrap."""
     directory, source = Path(directory), Path(source)
     verify_swop(source, template=True)
-    for relative in (CONFIG_PATH, HOSTED_PATH, Path(".herenow"), GRAPH_PATH):
+    for relative in (CONFIG_PATH, HOSTED_PATH, CONTROL_DISCOVERY_PATH, Path(".herenow"), GRAPH_PATH):
         target = directory / relative
         if target.exists() or target.is_symlink():
             raise SystemExit("Player archive conflicts with the repository-owned SWOP configuration")
     local = directory / "local"
     if directory.is_symlink() or local.is_symlink() or (local.exists() and not local.is_dir()):
         raise SystemExit("Player archive has an unsafe SWOP configuration directory")
+    if local.exists() and any(path.name.startswith("control-discovery") for path in local.iterdir()):
+        raise SystemExit("Player archive conflicts with repository-owned control discovery")
     index = _regular_file(directory, Path("index.html"), "Hosted bootstrap")
     document = index.read_text()
     head = re.search(r"<head(?:\s[^>]*)?>", document, re.IGNORECASE)
@@ -309,13 +420,13 @@ def stage_swop(directory, source):
         raise SystemExit("Hosted bootstrap requires an unmodified HTML head")
     graph, contents = runtime_graph(directory)
     script = staged_hosted_script(graph)
-    document = document[:head.end()] + "\n        " + bootstrap_tag(script) + document[head.end():]
+    document = document[:head.end()] + "\n        " + bootstrap_tag(script) + control_bootstrap_tag(directory) + document[head.end():]
     _verify_bootstrap_document(document, bootstrap_tag(script))
     for relative, data in contents.items():
         target = directory / GRAPH_PATH / graph / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-    for relative in (CONFIG_PATH, PROXY_PATH, DATA_PATH):
+    for relative in (CONFIG_PATH, CONTROL_DISCOVERY_PATH, PROXY_PATH, DATA_PATH):
         target = directory / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / relative, target)
