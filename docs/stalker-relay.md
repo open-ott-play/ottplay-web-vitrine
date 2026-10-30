@@ -152,6 +152,21 @@ separate verified-stable operation under `ottplay-foss/docs/release-workflow.md`
 
 ## Updates and rollback
 
+The single-replica Deployment uses
+[`Recreate`](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#recreate-deployment):
+normal Deployment updates terminate the old Pod before starting its replacement.
+This avoids a rolling-update surge of two relay Pods competing for h7 memory.
+Expect a brief API interruption while the replacement starts and becomes ready;
+startup failures can extend it. The relay is stateless and proxies catalog/API
+requests, not media streams. In-flight API requests can fail during replacement.
+
+The template leaves `terminationGracePeriodSeconds` unset, retaining Kubernetes'
+[30-second default](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination).
+That grace period does not promise request draining or a fixed outage duration.
+`Recreate` governs normal Deployment updates; it is not a global one-Pod guarantee
+under manual scaling, direct Pod deletion, forced deletion or node failures.
+Keep the configured replica count at one and verify termination during rollout.
+
 Record source/tag, official archive/manifest hashes, ARM64 digest, Deployment UID
 and resourceVersion, Secret reference, Service IP, gateway version and here.now
 owner version. Updates change only the image using a fresh UID/resourceVersion

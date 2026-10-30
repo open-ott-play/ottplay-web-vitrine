@@ -7,6 +7,7 @@
       "metadata": {"name": "ottplay-stalker-relay", "namespace": "synology-apps"},
       "spec": {
         "replicas": 1, "revisionHistoryLimit": 3,
+        "strategy": {"type": "Recreate"},
         "selector": {"matchLabels": {"app": "ottplay-stalker-relay"}},
         "template": {
           "metadata": {

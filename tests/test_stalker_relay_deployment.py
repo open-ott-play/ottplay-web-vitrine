@@ -98,6 +98,8 @@ class StalkerRelayDeployment(unittest.TestCase):
             output = json.loads(renderer.render(identity, 'registry.example/ottplay-stalker-relay',
                                                 'relay-config-v1', '100m', '128Mi', '512Mi'))
             deployment, service, egress, ingress = output['items']
+            self.assertEqual(deployment['spec']['replicas'], 1)
+            self.assertEqual(deployment['spec']['strategy'], {'type': 'Recreate'})
             pod = deployment['spec']['template']['spec']
             container = pod['containers'][0]
             self.assertEqual(container['image'], 'registry.example/ottplay-stalker-relay@' + f.image_digest)
