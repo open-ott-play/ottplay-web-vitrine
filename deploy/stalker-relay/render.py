@@ -14,9 +14,13 @@ DIGEST = re.compile(r'sha256:[0-9a-f]{64}\Z')
 MAX_ARCHIVE = 2 * 1024 * 1024 * 1024
 
 
+class VerificationError(ValueError):
+    """A fixed diagnostic chosen by the verifier, never copied from input data."""
+
+
 def require(condition, message):
     if not condition:
-        raise ValueError(message)
+        raise VerificationError(message)
 
 
 def sha(stream):
@@ -173,8 +177,12 @@ def main():
         with args.output.open('x', encoding='utf-8') as output:
             output.write(rendered)
         print(json.dumps({'status': 'rendered', **identity}, sort_keys=True))
-    except (ValueError, OSError, KeyError, TypeError, tarfile.TarError):
-        parser.exit(1, 'Relay manifest verification/render failed; no deployment was performed.\n')
+    except VerificationError as error:
+        parser.exit(1, f'Relay manifest verification failed: {error}. No deployment was performed.\n')
+    except FileExistsError:
+        parser.exit(1, 'Output already exists; choose a new output file. No deployment was performed.\n')
+    except (ValueError, OSError, KeyError, TypeError, AttributeError, tarfile.TarError):
+        parser.exit(1, 'Relay manifest input could not be read or has an invalid structure. No deployment was performed.\n')
 
 
 if __name__ == '__main__':

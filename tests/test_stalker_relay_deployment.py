@@ -205,10 +205,36 @@ class StalkerRelayDeployment(unittest.TestCase):
             result = subprocess.run(args, capture_output=True, text=True, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(output.read_bytes(), before)
+            self.assertIn('Output already exists', result.stderr)
+            self.assertNotIn(str(output), result.stderr)
             output.unlink(); f.manifest.write_text('{}')
             result = subprocess.run(args, capture_output=True, text=True, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(output.exists())
+            self.assertIn('Release manifest checksum mismatch', result.stderr)
+            self.assertNotIn('Traceback', result.stderr)
+
+    def test_malformed_manifest_shapes_return_safe_errors_without_tracebacks(self):
+        for field in ['assets', 'package_versions', 'images']:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                f = Fixture(directory)
+                if field == 'images':
+                    f.release['package_versions'][0]['images'] = ['PRIVATE_INPUT_MARKER']
+                else:
+                    f.release[field] = ['PRIVATE_INPUT_MARKER']
+                f.save()
+                output = Path(directory) / 'manifest.json'
+                args = [sys.executable, str(SCRIPT), '--manifest', str(f.manifest), '--manifest-sha256', f.manifest_hash,
+                        '--oci', str(f.archive), '--source', SOURCE, '--tag', TAG, '--repository', 'registry.example/relay',
+                        '--secret', 'relay-config-v1', '--cpu-request', '100m', '--memory-request', '128Mi',
+                        '--memory-limit', '512Mi', '--output', str(output)]
+                result = subprocess.run(args, capture_output=True, text=True, check=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('invalid structure', result.stderr)
+                self.assertNotIn('PRIVATE_INPUT_MARKER', result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertEqual(result.stdout, '')
+                self.assertFalse(output.exists())
 
     def test_documented_secret_creation_preserves_existing_version(self):
         guide = (ROOT / 'docs/stalker-relay.md').read_text()
