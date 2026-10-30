@@ -53,6 +53,22 @@ HOSTED_CONFIG = {
         "entryUrl": "/swop-input/",
     },
     "vportal": {"routes": [{"upstream": PROVIDER_URL, "path": "/vportal/provider-1"}]},
+    "stalker": {
+        "routes": [
+            {
+                "upstream": "http://vpn.vivioelectronics.top/server/load.php",
+                "path": "/stalker/provider-1"
+            },
+            {
+                "upstream": "http://nk.team-tx.st/server/load.php",
+                "path": "/stalker/provider-2"
+            },
+            {
+                "upstream": "http://z1.babo01.com:8080/server/load.php",
+                "path": "/stalker/provider-3"
+            }
+        ]
+    }
 }
 EXPECTED_PROXY = {
     "proxies": {
@@ -84,6 +100,36 @@ EXPECTED_PROXY = {
             },
             "rateLimit": "1200/hour/ip",
         },
+        "/stalker/provider-1": {
+            "upstream": "https://ottplay-stalker-api.igw-2560801.workers.dev/stalker/provider-1",
+            "method": "POST",
+            "headers": {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-OTT-Stalker-Relay": "${OTT_STALKER_PROVIDER_1}"
+            },
+            "rateLimit": "12000/hour/ip"
+        },
+        "/stalker/provider-2": {
+            "upstream": "https://ottplay-stalker-api.igw-2560801.workers.dev/stalker/provider-2",
+            "method": "POST",
+            "headers": {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-OTT-Stalker-Relay": "${OTT_STALKER_PROVIDER_2}"
+            },
+            "rateLimit": "12000/hour/ip"
+        },
+        "/stalker/provider-3": {
+            "upstream": "https://ottplay-stalker-api.igw-2560801.workers.dev/stalker/provider-3",
+            "method": "POST",
+            "headers": {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "X-OTT-Stalker-Relay": "${OTT_STALKER_PROVIDER_3}"
+            },
+            "rateLimit": "12000/hour/ip"
+        }
     },
 }
 EXPECTED_DATA = {
