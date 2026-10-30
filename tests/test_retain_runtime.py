@@ -393,12 +393,39 @@ class OwnerReaderTests(unittest.TestCase):
                     with patch.object(RETAIN.time, "sleep") as sleep:
                         self.assertEqual(reader("", 5), b"fresh")
                     self.assertEqual(len(seen), 2)
-                    self.assertIs(seen[0], seen[1])
+                    self.assertIsNot(seen[0], seen[1])
+                    self.assertEqual(seen[0].full_url, seen[1].full_url)
+                    self.assertEqual(seen[0].header_items(), seen[1].header_items())
                     self.assertEqual(seen[0].get_method(), "GET")
                     self.assertEqual(seen[0].full_url, reader.base)
                     self.assertEqual(seen[0].get_header("Authorization"), "Bearer offline-secret")
                     self.assertTrue(all(response.closed for response in responses))
                     sleep.assert_called_once_with(0.25)
+
+    def test_timeout_retry_discards_mutated_proxy_transport_state(self):
+        reader = RETAIN.OwnerReader("ottplay", SLUG, "offline-secret")
+        seen = []
+        test = self
+        class Response(io.BytesIO):
+            status = 200
+            def geturl(self):
+                return reader.base
+        class Opener:
+            def open(self, req, timeout):
+                seen.append(req)
+                test.assertEqual(req.type, "https")
+                test.assertEqual(req.host, "here.now")
+                test.assertIsNone(req._tunnel_host)
+                test.assertEqual(req.get_header("Authorization"), "Bearer offline-secret")
+                if len(seen) == 1:
+                    req.set_proxy("proxy.example:8080", "http")
+                    raise TimeoutError("offline-secret")
+                return Response(b"fresh")
+        reader.opener = Opener()
+        with patch.object(RETAIN.time, "sleep"):
+            self.assertEqual(reader("", 5), b"fresh")
+        self.assertEqual(len(seen), 2)
+        self.assertIsNot(seen[0], seen[1])
 
     def test_timeout_retries_are_bounded_and_sanitized(self):
         reader = RETAIN.OwnerReader("ottplay", SLUG, "offline-secret")

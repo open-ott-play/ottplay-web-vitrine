@@ -104,9 +104,12 @@ class OwnerReader:
                 or suffix.startswith("/files/hosted-runtime/")
                 or (suffix.startswith("/files/") and CONTROL_DISCOVERY_PATTERN.fullmatch(suffix[7:])),
                 "Unexpected owner endpoint")
-        req = request.Request(self.base + suffix, headers=self.headers, method="GET")
+        url = self.base + suffix
         for attempt in range(3):
             try:
+                # Proxy handlers mutate Request transport state. Rebuild it so
+                # each retry starts with the same HTTPS URL and owner headers.
+                req = request.Request(url, headers=self.headers, method="GET")
                 with self.opener.open(req, timeout=30) as response:
                     require(response.status == 200 and response.geturl() == req.full_url, "Owner request redirected or failed")
                     raw = response.read(limit + 1)
