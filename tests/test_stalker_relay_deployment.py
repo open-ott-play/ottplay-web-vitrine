@@ -3,6 +3,8 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -207,6 +209,51 @@ class StalkerRelayDeployment(unittest.TestCase):
             result = subprocess.run(args, capture_output=True, text=True, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(output.exists())
+
+    def test_documented_secret_creation_preserves_existing_version(self):
+        guide = (ROOT / 'docs/stalker-relay.md').read_text()
+        section = guide.split('Create a versioned Secret', 1)[1]
+        command = re.search(r'```sh\n(.*?)\n```', section, re.S).group(1)
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            source = directory / 'private.json'
+            state = directory / 'saved-secret'
+            source.write_text('new synthetic config')
+            executable = directory / 'kubectl'
+            executable.write_text('#!' + sys.executable + "\n" + r'''import os
+import pathlib
+import sys
+args = sys.argv[1:]
+state = pathlib.Path(os.environ['TEST_SECRET_STATE'])
+if 'create' in args:
+    filename = next(item.split('=', 2)[2] for item in args if item.startswith('--from-file=config.json='))
+    content = pathlib.Path(filename).read_text()
+    if '--dry-run=client' in args:
+        print(content)
+    else:
+        try:
+            with state.open('x') as output:
+                output.write(content)
+        except FileExistsError:
+            sys.exit(1)
+elif 'apply' in args:
+    state.write_text(sys.stdin.read().strip())
+else:
+    sys.exit(2)
+''')
+            executable.chmod(0o700)
+            env = {**os.environ, 'PATH': str(directory) + os.pathsep + os.environ.get('PATH', ''),
+                   'SECRET_NAME': 'fixture-config-v2', 'PRIVATE_CONFIG': str(source),
+                   'TEST_SECRET_STATE': str(state)}
+            state.write_text('retained synthetic config')
+            existing = subprocess.run(['bash', '-e'], input=command, text=True, capture_output=True, env=env, check=False)
+            self.assertNotEqual(existing.returncode, 0)
+            self.assertEqual(state.read_text(), 'retained synthetic config')
+            state.unlink()
+            fresh = subprocess.run(['bash', '-e'], input=command, text=True, capture_output=True, env=env, check=False)
+            self.assertEqual(fresh.returncode, 0, fresh.stderr)
+            self.assertEqual(state.read_text(), 'new synthetic config')
+            self.assertEqual(fresh.stdout, '')
 
     def test_raw_template_cannot_be_applied_as_json(self):
         with self.assertRaises(json.JSONDecodeError):

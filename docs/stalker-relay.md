@@ -56,11 +56,14 @@ printing/diffing its content. This scoped command avoids unrelated secrets:
 set +x
 set -o pipefail
 kubectl --context k3s-heaven -n synology-apps create secret generic "$SECRET_NAME" \
-  --from-file=config.json="$PRIVATE_CONFIG" --dry-run=client -o yaml | \
-  kubectl --context k3s-heaven -n synology-apps apply --server-side -f - >/dev/null
+  --from-file=config.json="$PRIVATE_CONFIG" >/dev/null
 ```
 
-File path and Secret name are arguments; content is confined to file/pipe/API.
+Creation fails if that name already exists. Keep the existing Secret unchanged
+and choose a new versioned name; do not replace, delete or apply over the old
+version. The previous Pod reference remains usable for rollback.
+
+File path and Secret name are arguments; content is confined to file/API.
 The rendered Pod uses UID/GID 65532, fsGroup 65532, read-only Secret mode 0440 and
 read-only root filesystem. No root init container is necessary. Configuration
 loads once at startup: rotate using a new Secret reference and Pod rollout;
