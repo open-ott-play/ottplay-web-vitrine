@@ -15,6 +15,14 @@ class ControlProxyMigrationTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.stage = self.root / "stock"
         make_stage(self.stage)
+        # Exercise the historical cutover against its exact reviewed destination.
+        after = (ROOT / "tests/control-proxy-after.json").read_bytes()
+        self.assertEqual(len(after), RETAIN.CONTROL_PROXY_TO["size"])
+        self.assertEqual(RETAIN.sha256(after), RETAIN.CONTROL_PROXY_TO["hash"])
+        (self.stage / RETAIN.EPG_PROXY_PATH).write_bytes(after)
+        self.proxy_patch = patch.object(SWOP, "EXPECTED_PROXY", json.loads(after))
+        self.proxy_patch.start()
+        self.addCleanup(self.proxy_patch.stop)
         self.original = RETAIN.snapshot(self.stage)
         self.version = RETAIN.CONTROL_PROXY_FROM_VERSION
         self.fixture = make_owner(self.stage, version=self.version)
