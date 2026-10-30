@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import tempfile
+import time
 from urllib import error, parse, request
 
 from demo_media import verify_demo
@@ -103,17 +104,30 @@ class OwnerReader:
                 or suffix.startswith("/files/hosted-runtime/")
                 or (suffix.startswith("/files/") and CONTROL_DISCOVERY_PATTERN.fullmatch(suffix[7:])),
                 "Unexpected owner endpoint")
-        try:
-            req = request.Request(self.base + suffix, headers=self.headers, method="GET")
-            with self.opener.open(req, timeout=30) as response:
-                require(response.status == 200 and response.geturl() == req.full_url, "Owner request redirected or failed")
-                raw = response.read(limit + 1)
-        except (error.URLError, OSError, ValueError):
-            # Response bodies/headers and request exception details may include
-            # credentials. Keep them out of diagnostics and retained receipts.
-            raise ValueError("Owner request failed or was redirected") from None
-        require(len(raw) <= limit, "Owner response exceeds its size bound")
-        return raw
+        url = self.base + suffix
+        for attempt in range(3):
+            try:
+                # Proxy handlers mutate Request transport state. Rebuild it so
+                # each retry starts with the same HTTPS URL and owner headers.
+                req = request.Request(url, headers=self.headers, method="GET")
+                with self.opener.open(req, timeout=30) as response:
+                    require(response.status == 200 and response.geturl() == req.full_url, "Owner request redirected or failed")
+                    raw = response.read(limit + 1)
+            except (error.URLError, OSError, ValueError) as exc:
+                timed_out = isinstance(exc, TimeoutError) or (
+                    isinstance(exc, error.URLError) and not isinstance(exc, error.HTTPError)
+                    and isinstance(exc.reason, TimeoutError))
+                if not timed_out or attempt == 2:
+                    # Response bodies/headers and exception details may include
+                    # credentials. Keep them out of diagnostics and receipts.
+                    raise ValueError("Owner request failed or was redirected") from None
+            else:
+                require(len(raw) <= limit, "Owner response exceeds its size bound")
+                return raw
+            # Re-read the same owner URL from byte zero. A partial body never
+            # reaches the verifier. Sleep outside the exception handler so an
+            # interruption cannot reveal the original exception through context.
+            time.sleep(0.25 * (attempt + 1))
 
 
 def checked_metadata(reader, expected_version, slug):

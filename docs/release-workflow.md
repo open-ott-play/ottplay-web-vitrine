@@ -138,7 +138,11 @@ sizes and SHA-256 hashes must match the downloaded bytes; JavaScript MIME types
 must match the pinned publisher. The directory name must match the canonical graph hash or the previously deployed
 sorted-path variant. Worker import rules still apply. Owner reads reject redirects
 and pending publications, and recheck the version and inventory before the copy
-is accepted. Any live demo, MSX, `.herenow/` or `local/swop.json` inventory, size,
+is accepted. A timed-out owner GET is retried at most twice after 0.25 and 0.5
+seconds, retaining the same URL, authorization and 30-second socket timeout.
+Each attempt starts from byte zero; partial bodies are discarded. HTTP errors,
+redirects, TLS failures and all byte/hash/version mismatches are never retried.
+Any live demo, MSX, `.herenow/` or `local/swop.json` inventory, size,
 hash or MIME difference from the stock stage stops publication for reconciliation.
 The final copy must contain exactly the unchanged stock tree plus these attested
 additions. Receipts are evidence outputs, never an input that grants exceptions.
