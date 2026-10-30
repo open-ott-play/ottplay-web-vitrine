@@ -30,6 +30,22 @@ window.__OTTPLAY_HOSTED__ = {
         "path": "/vportal/provider-1"
       }
     ]
+  },
+  "stalker": {
+    "routes": [
+      {
+        "upstream": "http://vpn.vivioelectronics.top/server/load.php",
+        "path": "/stalker/provider-1"
+      },
+      {
+        "upstream": "http://nk.team-tx.st/server/load.php",
+        "path": "/stalker/provider-2"
+      },
+      {
+        "upstream": "http://z1.babo01.com:8080/server/load.php",
+        "path": "/stalker/provider-3"
+      }
+    ]
   }
 };
 window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/control-discovery.17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497.json";

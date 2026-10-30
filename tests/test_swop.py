@@ -82,8 +82,10 @@ class SwopPublicationTests(unittest.TestCase):
         self.assertEqual(profile["serverWorkerUrl"], "/hosted-runtime/" + graph + "/hosted/epg-server.js")
         self.assertEqual(profile["diagnosticsUrl"], "/hosted-runtime/" + graph + "/hosted/epg-diagnostics.js")
         self.assertEqual(profile["source"], "https://cdn.epg.one/epg2.xml.gz")
+        self.assertEqual(self.profile()["stalker"], SWOP["HOSTED_CONFIG"]["stalker"])
         self.assertEqual(set(json.loads((self.target / ".herenow/proxy.json").read_text())["proxies"]),
-                         {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes", "/ott-control/api/device-transport"})
+                         {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes", "/ott-control/api/device-transport",
+                          "/stalker/provider-1", "/stalker/provider-2", "/stalker/provider-3"})
 
     def test_hosted_control_helper_is_verified_and_runs_before_player(self):
         self.runtime()
@@ -235,6 +237,24 @@ class SwopPublicationTests(unittest.TestCase):
         for value in invalid:
             path.write_text(json.dumps(value))
             with self.assertRaisesRegex(SystemExit, "SWOP proxy manifest"):
+                verify_swop(self.source, template=True)
+
+    def test_stalker_routes_remain_exact_and_cannot_receive_inline_credentials(self):
+        path = self.source / ".herenow/proxy.json"
+        original = json.loads(path.read_text())
+        for route in ("/stalker/provider-1", "/stalker/provider-2", "/stalker/provider-3"):
+            for field, value in (("upstream", "https://unreviewed.example/"),
+                                 ("method", "GET"), ("rateLimit", "999999/hour/ip"),
+                                 ("headers", {"Authorization": "Bearer forbidden-inline-value"})):
+                changed = copy.deepcopy(original)
+                changed["proxies"][route][field] = value
+                path.write_text(json.dumps(changed))
+                with self.subTest(route=route, field=field), self.assertRaisesRegex(SystemExit, "SWOP proxy manifest"):
+                    verify_swop(self.source, template=True)
+            changed = copy.deepcopy(original)
+            del changed["proxies"][route]
+            path.write_text(json.dumps(changed))
+            with self.subTest(route=route, removed=True), self.assertRaisesRegex(SystemExit, "SWOP proxy manifest"):
                 verify_swop(self.source, template=True)
 
     def test_legacy_and_wildcard_infrastructure_routes_cannot_reappear(self):

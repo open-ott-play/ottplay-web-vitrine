@@ -260,8 +260,9 @@ These features need no installation credential in the public profile. EPG now
 depends on our dedicated k3s Rust service and Cloudflare tunnel; SWOP and VPortal
 retain their existing here.now transports. The optional home command-server bridge
 below has its own discovery and pairing boundary. The validator allows only two
-exact EPG v1 routes and the existing VPortal route, rejecting legacy or wildcard
-routes, embedded secrets, changed upstreams and changed schemas.
+exact EPG v1 routes, the existing VPortal route and the three fixed Stalker
+provider routes, rejecting legacy or wildcard routes, embedded secrets, changed
+upstreams and changed schemas.
 
 ## Home command-server discovery
 
@@ -307,6 +308,23 @@ cancelling without changing the draft. Test two concurrent pairs, tampered
 messages, wrong keys, expired messages, retransmission and a missing record.
 All browser calls must target this Site's `/.herenow/data/swop_pairs` paths,
 without contacting the old SWOP Worker. Test old LG cryptographic support.
+
+## Preserving configured Stalker routes
+
+The hosted profile retains its three existing Stalker mappings to
+`/stalker/provider-1`, `/stalker/provider-2` and `/stalker/provider-3`. The stock
+proxy manifest carries the matching fixed routes with service-variable
+references. It contains no installation credential values and accepts no
+caller-selected upstream.
+
+Both parts must be preserved together: retaining the proxy paths without the
+`stalker.routes` profile mapping would leave the browser using the wrong
+transport. Preparation verifies the exact profile and proxy contract; the
+owner-version retention check then requires the deployed protected files to
+match these reviewed bytes. This uses normal exact preservation, without a
+new migration exception or overwrite flag. If the owner version or mappings
+change during another deployment, obtain and review a fresh owner inventory
+before preparing a new publication copy.
 
 ## VPortal route
 
