@@ -108,6 +108,12 @@ channel. The CLI validates the complete result before probing archive media,
 then sends the exact channel and archive timestamps to the player. An archive
 selection never falls back to live playback. The terminal reports each search
 stage on stderr; provider media checks can still be slower than guide lookup.
+For an explicitly configured `epg.stateful_archive_origins` origin, the CLI
+skips media probes because an availability request can change a shared proxy
+session. It reports availability as deferred, not verified, and starts media
+only after the normal catalogue and archive eligibility checks. This setting
+uses exact origins and is never sent to the public EPG service; see the
+[stateful proxy guide](https://github.com/open-ott-play/ottplay-control-server/blob/main/docs/cli.md#stateful-archive-proxies).
 
 For example, `ott -t 45 t1 "Три кота"` first searches channel names, then current
 programmes and available archives. Select a TV provider first if the player is
@@ -162,7 +168,7 @@ for receipt validation, metadata limits and provider matching.
    started after readiness cannot establish cold-load responsiveness. Do not
    publish the server-mode player while the backend is cold or unavailable.
 3. Keep the optimized, source-matched local benchmark of retained old and new
-   snapshots separate from official-image measurements. It measures refresh
+   snapshots separate from qualified-image measurements. It measures refresh
    overlap locally, not a Linux/musl refresh on `h7`, and excludes the retained
    production compressed buffer. Retain large-playlist match latency and
    failed-refresh evidence that a usable generation and its age are preserved.
@@ -249,6 +255,10 @@ It does not replace the following browser/TV acceptance:
   indexed guide lookup and provider media checks. A fast guide does not make a
   slow or unavailable archive origin faster. Check backend readiness and source
   age before restarting services.
+- **Archive probes interrupt an existing stream:** configure the exact proxy
+  origin in `epg.stateful_archive_origins` as described in the CLI guide above.
+  Deferred availability means that no media request was made during search;
+  confirm playback with decoder progress after the archive command completes.
 - **Catalogue changed:** wait for the active provider's catalogue to finish
   loading. A fresh successful catalogue read on an updated player renews its
   two-minute playback receipt. Genuine provider or channel changes still require
