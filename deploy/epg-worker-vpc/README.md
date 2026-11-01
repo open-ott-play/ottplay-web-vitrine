@@ -18,10 +18,12 @@ CLI ---------------------------> dedicated EPG Worker --+-> fixed VPC Service
 
 ## Scope and limits
 
-Only these three routes are public:
+Only these four routes are public:
 
 - `POST /epg/v1/match`: uncompressed JSON, at most 512 KiB; no query.
 - `POST /epg/v1/current`: the same request limit; no query.
+- `POST /epg/v1/search`: bounded current/archive candidates from the native guide;
+  the same request limit, no query, and a 2 MiB response limit.
 - `GET /epg/v1/programmes`: no request body; exactly one each of `channelId`,
   `shift`, `hours`, and `generation`, with the existing server's field bounds.
 
@@ -41,7 +43,7 @@ codes, including 409 generation changes, 429 saturation, and 503 cold readiness.
 Responses carry `no-store`, `nosniff`, and `no-referrer`; only a bounded numeric
 `Retry-After` from 429/503 responses is retained.
 
-Wire response limits are 4 MiB for match, 2 MiB for current, and 32 MiB for
+Wire response limits are 4 MiB for match, 2 MiB for current/search, and 32 MiB for
 programmes. The last is deliberately larger than the server's **8 MiB decoded
 UTF-16 row budget**: JSON escaping can expand a code unit to six ASCII bytes,
 and serialization adds metadata. The current endpoint already bounds serialized
@@ -64,7 +66,7 @@ terminates the stream; a partial body is never a complete valid response. Client
 must handle that transport failure using their normal error path.
 
 Three mandatory rate-limit bindings provide separate burst protection. Defaults
-are 120 match, 600 programme, and 60 current requests per minute per connecting
+are 120 match, 600 programme, and 60 combined current/search requests per minute per connecting
 address at each Cloudflare location. Namespace IDs must be unused and distinct.
 Missing bindings or a missing platform client address fail closed before VPC
 access. `CF-Connecting-IP` is trusted only because Cloudflare supplies it on the
@@ -139,7 +141,7 @@ headroom under the Free CPU limit.
    Preserve the plan privately and review the exact target, bindings and source
    hash before applying it. This repository does not auto-apply the module.
 3. After reviewing publication, enable only the dedicated production URL.
-   Validate all three legitimate routes over the real VPC path, cold/stale and
+   Validate all four legitimate routes over the real VPC path, cold/stale and
    generation-conflict behavior, response sizes, burst handling and CPU usage.
    Verify that malformed, oversized, unknown-route and redirect attempts never
    create arbitrary private-network access. Do not treat an edge-only rejection
@@ -165,3 +167,14 @@ References: [VPC Services](https://developers.cloudflare.com/workers-vpc/configu
 [native BYOB reads](https://developers.cloudflare.com/workers/runtime-apis/streams/readablestreambyobreader/),
 [rate-limit locality and accuracy](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/),
 [here.now proxy routes](https://here.now/docs#proxy-routes).
+
+## Compact search rollout
+
+Deploy a native EPG build that advertises `searchVersion: 1` before enabling this
+route. Updated CLI clients discover the capability through `/current`, then send
+256-channel batches to `/search`. The service returns one generation of complete
+candidate chains, not media URLs; the authenticated player still resolves and
+authorizes archive playback. Legacy clients keep their existing routes. Search
+shares `CURRENT_LIMITER`, so this change creates no new bindings or quota.
+If the public guide becomes unavailable, a configured CLI may restart the whole
+read-only query against its loopback native guide; it never mixes both origins.

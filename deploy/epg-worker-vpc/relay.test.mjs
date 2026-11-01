@@ -68,9 +68,10 @@ function tinyInput({ end = Infinity, stallAt = Infinity, byteAt = index => 65 + 
   return state;
 }
 
-test('only the three public routes reach the bound service; bytes and trusted limiter key survive', async () => {
+test('only the four public routes reach the bound service; bytes and trusted limiter key survive', async () => {
   for (const [path, name] of [
     ['/epg/v1/match', 'MATCH_LIMITER'], ['/epg/v1/current', 'CURRENT_LIMITER'],
+    ['/epg/v1/search', 'CURRENT_LIMITER'],
     ['/epg/v1/programmes?' + QUERY, 'PROGRAMME_LIMITER'],
   ]) {
     const body = encoder.encode(' { "name": "РЕН ТВ 📺", "number": 1.00 }\n');
@@ -95,6 +96,7 @@ test('host, scheme, port, route, method and POST query/fragment violations never
     badOrigin('https://attacker.example/epg/v1/match'),
     badOrigin('https://epg.2560801.xyz:444/epg/v1/match'),
     request('/epg/v1/health'), request('/epg/v1/match/'), request('/epg/v1/%6datch'),
+    request('/epg/v1/search?source=other'), request('/epg/v1/search', { method: 'GET' }),
     request('/epg/v1/match?source=other'), request('/epg/v1/current#fragment'),
     request('/epg/v1/programmes?' + QUERY + '#fragment'),
     request('/epg/v1/match', { method: 'GET' }),
@@ -316,7 +318,7 @@ test('redirects, HTML challenges and encoded upstream bodies are never exposed a
 
 test('route-specific response limits accept exact boundaries and cancel overflowing streams', async () => {
   for (const [path, limit] of [['/epg/v1/match', 4 * 1024 * 1024],
-    ['/epg/v1/current', 2 * 1024 * 1024], ['/epg/v1/programmes?' + QUERY, 32 * 1024 * 1024]]) {
+    ['/epg/v1/current', 2 * 1024 * 1024], ['/epg/v1/search', 2 * 1024 * 1024], ['/epg/v1/programmes?' + QUERY, 32 * 1024 * 1024]]) {
     const bytes = new Uint8Array(limit).fill(32); bytes[0] = 91; bytes[limit - 1] = 93;
     const f = fixture(() => response(bytes));
     const result = await relay.fetch(request(path), f.env);
