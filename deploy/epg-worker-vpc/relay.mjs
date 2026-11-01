@@ -4,6 +4,7 @@ const DNS_LABEL = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
 const PUBLIC_HOST_PATTERN = new RegExp(`^${DNS_LABEL}(?:\\.${DNS_LABEL})+$`);
 const ROUTES = {
   "/epg/v1/match": { method: "POST", limiter: "MATCH_LIMITER", bytes: 4 * 1024 * 1024 },
+  "/epg/v1/search": { method: "POST", limiter: "CURRENT_LIMITER", bytes: 2 * 1024 * 1024 },
   "/epg/v1/current": { method: "POST", limiter: "CURRENT_LIMITER", bytes: 2 * 1024 * 1024 },
   "/epg/v1/programmes": { method: "GET", limiter: "PROGRAMME_LIMITER", bytes: 32 * 1024 * 1024 },
 };
