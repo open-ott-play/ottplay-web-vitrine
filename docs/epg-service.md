@@ -15,8 +15,9 @@ it does not execute our Rust process or schedule XMLTV processing.
 The service is external infrastructure: `Deployment/ottplay-epg` and
 `Service/ottplay-epg` in `synology-apps` on the ARM64 node `h7` in `k3s-heaven`.
 The dedicated `ottplay-epg-api.igw-2560801.workers.dev` gateway uses one fixed
-Workers VPC Service through the existing h7 tunnel. It permits only the three
-EPG operations below; it cannot select another host, port or service.
+Workers VPC Service through the existing h7 tunnel. It permits only four EPG
+operations: match, current, search and programmes. It cannot select another
+host, port or service.
 The [gateway module](../deploy/epg-worker-vpc/) has a separate reviewed plan and
 private state. Publishing the site does not provision it. The legacy
 `epg.2560801.xyz` ingress remains separately owned and subject to that zone's
@@ -75,10 +76,15 @@ preserves every upstream header. here.now publicly documents routing, query
 forwarding and response streaming, not arbitrary compute or an EPG cache:
 [proxy documentation](https://here.now/docs#proxy-routes).
 
-Matching has an eight-second deadline including queue time. At most two requests
-are admitted, with one executing against the shared index. A disconnected request
-cancels its work; expiry returns `504 EPG_TIMEOUT` without partial mappings.
-The player preserves its saved guide and reports the timeout in diagnostics.
+Match, current and search requests have an eight-second deadline after input
+validation, including queue time. A request whose complete set of raw channel
+metadata already has cached mappings uses a separate four-reader lane. Other
+requests admit at most two callers, with one executing against the matching
+engine. The mapping cache belongs to one guide generation and includes known
+misses, but never resolution errors or timeouts. Programme reads use their own
+four-reader lane. Full admission returns `429 EPG_BUSY`; a disconnected request
+cancels its work, and matching expiry returns `504 EPG_TIMEOUT` without partial
+results. The player preserves its saved guide and reports errors in diagnostics.
 
 `/epg/v1/health` is for Kubernetes readiness and stays outside the here.now
 public proxy manifest. In `EPG_ONLY=true` the dedicated process exposes only the
@@ -95,6 +101,28 @@ player does not load channel schedules for the command, and the CLI does not
 send its command-server access token to the EPG service. Title search is
 case-insensitive; channels without a current programme are omitted.
 
+When the backend advertises `searchVersion: 1`, compatible CLI runtimes use
+`POST /epg/v1/search` to retrieve compact current matches and archive chains
+from that same guide generation. This avoids downloading a schedule for each
+channel. The CLI validates the complete result before probing archive media,
+then sends the exact channel and archive timestamps to the player. An archive
+selection never falls back to live playback. The terminal reports each search
+stage on stderr; provider media checks can still be slower than guide lookup.
+For an explicitly configured `epg.stateful_archive_origins` origin, the CLI
+skips media probes because an availability request can change a shared proxy
+session. It reports availability as deferred, not verified, and starts media
+only after the normal catalogue and archive eligibility checks. This setting
+uses exact origins and is never sent to the public EPG service; see the
+[stateful proxy guide](https://github.com/open-ott-play/ottplay-control-server/blob/main/docs/cli.md#stateful-archive-proxies).
+
+For example, `ott -t 45 t1 "Три кота"` first searches channel names, then current
+programmes and available archives. Select a TV provider first if the player is
+using a separate media catalogue: `ott t1 provider m3u`. A configured local EPG
+fallback can restart an unavailable hosted query against a locally downloaded
+guide; it never mixes generations or repeats a playback request. See the
+[CLI search and fallback guide](https://github.com/open-ott-play/ottplay-control-server/blob/main/README.md)
+for installation and configuration.
+
 Set only `epg.url` in the CLI configuration to
 `https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1`, retaining `source: "epg-one"`
 and all other settings. This CLI route is allowed by the fixed VPC gateway. It does
@@ -107,17 +135,32 @@ for receipt validation, metadata limits and provider matching.
 
 ## Deployment sequence
 
-1. Build and qualify a current official Rust server artifact with the bounded
-   EPG v1 API. Import the verified OCI bytes and pin their immutable image digest
-   in `deploy/epg/ottplay-epg.yaml`. Record release/source/image identity; never
-   restore the historical v1.1.43 pin.
+1. Build and qualify a Rust server artifact with the bounded EPG v1 API. For
+   a source build from `ottplay-foss`, use the tracked Dockerfile's `epg` target:
+
+   ```sh
+   docker buildx build --platform linux/arm64 --target epg \
+     --label org.opencontainers.image.source=https://github.com/open-ott-play/ottplay-foss \
+     --label org.opencontainers.image.revision="$SOURCE_SHA" \
+     --tag "$IMAGE" --push .
+   ```
+
+   Set `SOURCE_SHA` to the full source commit and `IMAGE` to the registry tag.
+   Build from a clean, immutable source revision and record that revision in
+   the OCI source labels. This target contains the native server and CA bundle;
+   it does not build or include the player frontend. The default `player`
+   target still includes the frontend and remains unchanged for normal releases.
+   Verify the published image can be pulled by the cluster, then pin its
+   immutable digest in `deploy/epg/ottplay-epg.yaml`. Record source, architecture,
+   image digest, and release tag when one exists; do not describe an untagged
+   source build as an official release or restore the historical v1.1.43 pin.
 2. For initial provisioning, apply the dedicated Deployment, Service and
    connector policy, then the separate fixed VPC gateway after reviewing its
    plan. No new zone DNS or public tunnel ingress is needed for the gateway.
    For an existing installation, update only the image with a fresh
    deployment identity/resource-version guard; preserve its configuration and
    service/network resources. Qualify
-   the actual official ARM64 image on node `h7` during its initial
+   the actual ARM64 image on node `h7` during its initial
    download: accepted readiness and REN rows, exact image/container identity,
    responsive health, no restart/OOM/limit-pressure event, and authoritative
    cgroup peak below the 2 GiB limit; retain current memory and process RSS too.
@@ -125,18 +168,19 @@ for receipt validation, metadata limits and provider matching.
    started after readiness cannot establish cold-load responsiveness. Do not
    publish the server-mode player while the backend is cold or unavailable.
 3. Keep the optimized, source-matched local benchmark of retained old and new
-   snapshots separate from official-image measurements. It measures refresh
+   snapshots separate from qualified-image measurements. It measures refresh
    overlap locally, not a Linux/musl refresh on `h7`, and excludes the retained
    production compressed buffer. Retain large-playlist match latency and
    failed-refresh evidence that a usable generation and its age are preserved.
    The 2048-channel match check must finish within the player's 12-second request
    timeout and return the expected mappings, including omitted unmatched channels.
-4. Prepare a compatible official frontend artifact, review the exact three-route
-   proxy manifest and seven-asset graph, then validate a preview against the backend.
+4. Prepare a compatible frontend artifact, review the complete current proxy
+   manifest and seven-asset EPG graph, then validate a preview against the backend.
+   Preserve the existing control, VPortal and Stalker routes alongside EPG.
 5. Publish through the protected workflow only after preview acceptance; verify
    the production runtime and an ordinary reload with a previously primed cache.
 
-Optionally continue observing the same official container through its normal
+Optionally continue observing the same qualified container through its normal
 refresh, approximately two hours after the accepted `fetchedAt`. A second
 accepted generation, unchanged container identity, continuous readiness/health
 and updated cgroup peak establish that refresh measurement. This follow-up is
@@ -161,8 +205,10 @@ must not be executed while the server-mode profile is live.
 ## Acceptance
 
 Before cutover run `python3 scripts/check-public-epg.py ./dist --upstream`.
-This validates the exact staged configuration and checks all three operations
-on its fixed new gateway, including CLI current-programme queries. After
+This validates the exact staged configuration and checks match, programmes and
+current on its fixed gateway. Qualify compact search separately with a compatible
+CLI and a real player's catalogue; verify the selected archive timestamps and
+playback state as well as the search response. After
 publication the workflow runs `python3 scripts/check-public-epg.py ./dist`
 against the public browser route. Both reject stale, two-hour-old or far-future
 generations. They neither retry a challenge nor fall back to another origin.
@@ -202,3 +248,27 @@ It does not replace the following browser/TV acceptance:
 - Inspect live owner file inventory, finalize warnings and proxy response
   headers. Check an ordinary cached-tab reload loads the new entry/profile and
   complete immutable worker graph without intercepting network requests.
+
+## Search and archive troubleshooting
+
+- **Search is slow:** use the CLI's stderr stages to distinguish catalogue reads,
+  indexed guide lookup and provider media checks. A fast guide does not make a
+  slow or unavailable archive origin faster. Check backend readiness and source
+  age before restarting services.
+- **Archive probes interrupt an existing stream:** configure the exact proxy
+  origin in `epg.stateful_archive_origins` as described in the CLI guide above.
+  Deferred availability means that no media request was made during search;
+  confirm playback with decoder progress after the archive command completes.
+- **Catalogue changed:** wait for the active provider's catalogue to finish
+  loading. A fresh successful catalogue read on an updated player renews its
+  two-minute playback receipt. Genuine provider or channel changes still require
+  a new search; never replay an uncertain playback request automatically.
+- **Wrong programme in an archive:** compare the selected channel, EPG mapping,
+  guide timestamps and resolved archive timestamp, then inspect the actual video.
+  A reachable stream or an archive acknowledgement does not prove that the
+  upstream guide describes its content correctly. Missing HLS programme-date-time
+  tags alone do not prove that the provider returned live video.
+- **Black screenshot:** a WebView snapshot can omit its video plane while still
+  capturing menus and banners. Check decoder progress and errors, and distinguish
+  a snapshot limitation from an actual playback failure. A cached `playing`
+  label alone is insufficient evidence that video continues to advance.
