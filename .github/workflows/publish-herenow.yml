@@ -127,6 +127,8 @@ jobs:
           ref: 8cf033ed53b82c0c67b16359c8c431f99e111d04
           path: .ci-tools/herenow
           persist-credentials: false
+      - name: Verify canonical control discovery before cutover
+        run: python3 scripts/check-control-discovery.py ./dist --upstream
       - name: Verify staged EPG origin before cutover
         run: python3 scripts/check-public-epg.py ./dist --upstream
       - name: Publish verified distribution
@@ -140,6 +142,8 @@ jobs:
         run: bash scripts/publish-herenow.sh ./dist
       - name: Verify public EPG generation after publication
         run: python3 scripts/check-public-epg.py ./dist
+      - name: Verify native discovery JSON after publication
+        run: python3 scripts/check-control-discovery.py ./dist
     if: ${{ !inputs.qualify_only && github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     environment: production
     timeout-minutes: 30

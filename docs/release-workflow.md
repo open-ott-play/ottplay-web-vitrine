@@ -195,6 +195,17 @@ Only the reviewed 1149-byte proxy with SHA-256
 may replace it. The older owner version and unrelated versions are rejected,
 even if their proxy bytes match. All other protected entries must remain exact.
 
+The native-discovery route addition is separately pinned to owner version
+`01M6HME985RD3JN6T1X5BH0JDG`. Only the 2217-byte proxy manifest with SHA-256
+`edba89271adfc29cc9a3ab8b2efa274269c739fb06729e89b6749bb637735294`
+may change to the 2509-byte manifest with SHA-256
+`1db5fd88531bf0e6844c99ba5dd4fcd8f2b6b843c408ff5d6c4e6a45571ca625`.
+It adds only the exact public `GET /ott-control/api/discovery` route. Existing
+device transport, EPG, VPortal, Stalker and Site Data configuration stay unchanged.
+The updated catalog names the canonical API, while old fingerprinted catalogs
+remain retained. The publication workflow checks the canonical discovery JSON
+before publishing and the public discovery entry point afterward.
+
 A second source-pinned reconciliation corrects legacy demo MIME metadata at
 owner version `01M5NVXM5S6GNY3RFA11WGRJ3H`: `demo/pattern.m3u8` changes from
 `text/plain` to `application/vnd.apple.mpegurl`, and exactly `demo/pattern0.ts`

@@ -84,7 +84,7 @@ class SwopPublicationTests(unittest.TestCase):
         self.assertEqual(profile["source"], "https://cdn.epg.one/epg2.xml.gz")
         self.assertEqual(self.profile()["stalker"], SWOP["HOSTED_CONFIG"]["stalker"])
         self.assertEqual(set(json.loads((self.target / ".herenow/proxy.json").read_text())["proxies"]),
-                         {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes", "/ott-control/api/device-transport",
+                         {"/vportal/provider-1", "/epg/v1/match", "/epg/v1/programmes", "/ott-control/api/device-transport", "/ott-control/api/discovery",
                           "/stalker/provider-1", "/stalker/provider-2", "/stalker/provider-3"})
 
     def test_hosted_control_helper_is_verified_and_runs_before_player(self):
@@ -135,6 +135,25 @@ class SwopPublicationTests(unittest.TestCase):
         self.assertNotIn(SWOP["bootstrap_tag"](legacy_profile), document)
         for relative, data in old_files.items():
             self.assertEqual((self.graph() / relative).read_bytes(), data)
+
+    def test_discovery_nominates_the_api_while_preserving_both_hosted_transport_bases(self):
+        catalog = json.loads((self.source / SWOP["CONTROL_DISCOVERY_PATH"]).read_bytes())
+        self.assertEqual(catalog, {"version": 1, "servers": [{
+            "id": "home._ottplay-ctrl._tcp.alvit.cf.", "domain": "alvit.cf",
+            "address": "https://www.2560801.xyz/ott-control",
+        }]})
+        self.assertEqual(self.profile(self.source)["controlTransport"], {
+            "version": 1, "endpoint": "/ott-control/api/device-transport",
+            "bases": ["https://player.ottplay.here.now/ott-control",
+                      "https://www.2560801.xyz/ott-control"],
+        })
+        route = SWOP["EXPECTED_PROXY"]["proxies"]["/ott-control/api/discovery"]
+        self.assertEqual(route, {
+            "upstream": "https://www.2560801.xyz/ott-control/api/discovery",
+            "method": "GET", "headers": {"Accept": "application/json",
+                "User-Agent": "OTT-play-control-discovery/1.0"},
+            "rateLimit": "1200/hour/ip",
+        })
 
     def test_discovery_assignment_tampering_is_rejected_in_template_and_stage(self):
         self.runtime()

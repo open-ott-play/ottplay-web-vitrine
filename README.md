@@ -96,6 +96,12 @@ The synchronous profile points to a fingerprinted public JSON catalog on
 addresses only; the actual Home command server remains at
 `https://www.2560801.xyz/ott-control`.
 
+The catalog names that canonical API. Native setup can use the friendly
+`https://player.ottplay.here.now/ott-control` discovery entry point: its exact
+`GET /api/discovery` route returns the canonical descriptor. The friendly entry
+point is not a complete native command API. Hosted browsers keep using the
+same-origin transport adapter for both canonical and previously saved addresses.
+
 An unconfigured compatible player can find the server and request pairing.
 Existing connections and deliberate disconnects stay unchanged. Discovery does
 not grant control: the operator approves the player's displayed code with

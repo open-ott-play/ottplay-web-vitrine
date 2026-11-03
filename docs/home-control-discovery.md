@@ -7,9 +7,13 @@ the command server remains a separate service.
 ## Addresses and prerequisites
 
 - Player: <https://player.ottplay.here.now/>.
-- Current public catalog: <https://player.ottplay.here.now/local/control-discovery.17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497.json>.
-- Hosted Home **Server address**: `https://player.ottplay.here.now/ott-control`.
-- Direct/native Home address remains `https://www.2560801.xyz/ott-control`.
+- Current public catalog: <https://player.ottplay.here.now/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json>.
+- Canonical Home **command API**: `https://www.2560801.xyz/ott-control`.
+- Friendly native **discovery entry point**: `https://player.ottplay.here.now/ott-control`.
+  Its `GET /api/discovery` returns JSON naming the canonical command API. It is
+  not a proxy for the complete authenticated native API.
+- Existing hosted-browser connections using the friendly address remain valid
+  through the hosted transport adapter.
 
 Do not enter the catalog URL in the player's **Server address** field. The
 catalog contains only the reviewed DNS-SD identity and HTTPS address:
@@ -18,7 +22,7 @@ catalog contains only the reviewed DNS-SD identity and HTTPS address:
 {
   "servers": [
     {
-      "address": "https://player.ottplay.here.now/ott-control",
+      "address": "https://www.2560801.xyz/ott-control",
       "domain": "alvit.cf",
       "id": "home._ottplay-ctrl._tcp.alvit.cf."
     }
@@ -30,7 +34,7 @@ catalog contains only the reviewed DNS-SD identity and HTTPS address:
 Reading this file neither checks the controller's current availability nor
 grants remote control. Pairing, device credentials and command queues remain on
 the Home controller. Its canonical `public_url` and DNS-SD descriptor remain the direct address.
-The hosted address must be an explicitly configured `discovery.public_aliases`
+The older hosted address must remain an explicitly configured `discovery.public_aliases`
 entry. Hosted pairing submits `server_address`, and approval and claim both
 validate that exact alias against the controller configuration.
 
@@ -48,6 +52,14 @@ hosted profile and before any player scripts. The profile lists the two reviewed
 Home bases above. Requests to those bases use the same-origin
 `POST /ott-control/api/device-transport` route; unrelated manually configured
 controllers retain direct transport.
+
+The catalog always names the canonical API, so the same v1 descriptor works for
+native clients without a browser adapter. A native user can enter the friendly
+discovery entry point in **Remote control server** and save it. The exact public
+GET route forwards only discovery to the canonical controller, without credentials
+or redirects. The native client selects the returned canonical address and sends
+pairing, command polling and acknowledgements there. There is no hostname-specific
+fallback or silent rewrite of a saved connection.
 
 The adapter carries the device token in the HTTPS JSON body. A transparent
 here.now proxy does not forward the client's Authorization header. The backend
@@ -90,15 +102,21 @@ Existing connections and deliberate disconnects are preserved. A catalog update
 does not replace a saved address/token or silently reconnect a disabled player.
 **Find command server** can stage a deliberate replacement, but the saved
 connection changes only after successful approval. For manual setup, enter the
-Home server address above and that device's own access code; never an
+canonical Home command API address above and that device's own access code; never an
 administrator token, another player's code, or credentials embedded in a URL.
+
+A native client previously configured manually with the hosted-browser alias
+does not gain a complete API from this discovery route. Use the normal Settings
+discovery/pairing flow to stage a replacement and approve it. The existing
+connection must remain unchanged until that replacement is acknowledged. Do not
+copy tokens to a different address or edit the protected client store.
 
 ## How the deployment profile selects the catalog
 
 The generated synchronous `local/hosted.js` sets:
 
 ```js
-window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/control-discovery.17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497.json";
+window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json";
 ```
 
 `scripts/swop.py` inserts that script before other player scripts and includes
@@ -194,7 +212,7 @@ Run this public read-only probe from the repository checkout, using the verified
 [host TLS profile](security-design.md#host-tls-profile), without authorization:
 
 ```sh
-DISCOVERY_URL='https://player.ottplay.here.now/local/control-discovery.17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497.json'
+DISCOVERY_URL='https://player.ottplay.here.now/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json'
 curl --disable --fail --silent --show-error --max-time 15 --max-filesize 8192 \
   --proto '=https' --tlsv1.2 --ciphers 'DEFAULT:@SECLEVEL=2' \
   -H 'Origin: http://localhost:8443' \
@@ -229,11 +247,32 @@ Headers alone do not prove browser CORS behavior. Do not send credentials or use
 a cache-busting URL. Test normal caching and retain prior URLs: JSON and HTML
 can have different cache lifetimes and edge caches can converge at different times.
 
+Also verify the API discovery route, separately from the static catalog:
+
+```sh
+python3 scripts/check-control-discovery.py ./dist --upstream
+python3 scripts/check-control-discovery.py ./dist
+```
+
+The first read-only probe checks the canonical controller; the second checks the
+public native entry point. Both require bounded HTTP 200 JSON matching the staged
+catalog and canonical pairing URL. HTML with status 200, redirects, changed server
+identity and upstream errors fail verification. Neither probe pairs a device or
+sends a player command.
+
 ## Troubleshooting
 
 - **The file returns HTTP 200, but discovery fails:** check MIME and exact bytes.
   A missing static path can return the site's HTML shell with HTTP 200. Compare
   the loaded profile's URL with the published manifest filename and hash.
+- **Native `GET /ott-control/api/discovery` returns HTML:** the public discovery
+  proxy route is missing or was rejected at publication. Check finalize warnings
+  and the owner manifest; do not treat the page shell as a controller response.
+- **Native discovery works, but a previously saved hosted address cannot poll:**
+  the friendly URL supports discovery and the browser adapter, not the full
+  authenticated native API. Repeat the normal native discovery/approval flow so
+  it stores the returned canonical address. Preserve the existing connection
+  until approval completes; never migrate stored tokens silently.
 - **Works on here.now, fails locally or on a TV:** test CORS from that exact
   origin and inspect the player's transport error. An older browser without
   the required secure discovery transport needs an updated player/browser or
