@@ -215,6 +215,20 @@ CONTROL_PROXY_TO = {
     "contentType": "application/json; charset=utf-8",
 }
 
+
+# One reviewed discovery GET route addition. Retain every existing transport
+# route and pin both complete proxy byte identities to the accepted live owner.
+DISCOVERY_PROXY_FROM_VERSION = "01M6HME985RD3JN6T1X5BH0JDG"
+DISCOVERY_PROXY_FROM = {
+    "size": 2217, "hash": "edba89271adfc29cc9a3ab8b2efa274269c739fb06729e89b6749bb637735294",
+    "contentType": "application/json; charset=utf-8",
+}
+DISCOVERY_PROXY_TO = {
+    "size": 2509, "hash": "1db5fd88531bf0e6844c99ba5dd4fcd8f2b6b843c408ff5d6c4e6a45571ca625",
+    "contentType": "application/json; charset=utf-8",
+}
+
+
 # The reviewed predecessor used file(1) fallback MIME types for these unchanged
 # demo bytes. Only this exact owner version may migrate to the publisher's HLS
 # types; no caller-provided inventory or broad MIME exception authorizes it.
@@ -262,7 +276,8 @@ def check_protected(stock, owner, expected_version, reader):
                  for name, identity in DEMO_MIME_FROM.items()})
     for version, before, after in (
             (EPG_PROXY_FROM_VERSION, EPG_PROXY_FROM, EPG_PROXY_TO),
-            (CONTROL_PROXY_FROM_VERSION, CONTROL_PROXY_FROM, CONTROL_PROXY_TO)):
+            (CONTROL_PROXY_FROM_VERSION, CONTROL_PROXY_FROM, CONTROL_PROXY_TO),
+            (DISCOVERY_PROXY_FROM_VERSION, DISCOVERY_PROXY_FROM, DISCOVERY_PROXY_TO)):
         approved_cutover = (expected_version == version
                             and current.get(EPG_PROXY_PATH) == before
                             and expected.get(EPG_PROXY_PATH) == after

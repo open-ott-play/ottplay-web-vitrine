@@ -48,4 +48,4 @@ window.__OTTPLAY_HOSTED__ = {
     ]
   }
 };
-window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/control-discovery.17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497.json";
+window.__OTT_CONTROL_DISCOVERY_URL__ = "https://player.ottplay.here.now/local/control-discovery.0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d.json";

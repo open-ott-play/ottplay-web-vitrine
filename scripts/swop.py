@@ -18,7 +18,10 @@ EXPECTED_CONFIG = {}
 PROVIDER_URL = "http://cd3c21307c36.vportalu.net/api/v1/"
 EPG_API_URL = "https://ottplay-epg-api.igw-2560801.workers.dev/epg/v1"
 CONTROL_RUNTIME_PATH = Path("dist/control-transport.js")
-CONTROL_DISCOVERY_SHA256 = "17449f3492e02ba4d04d41f5375a73aaad73bebbbc678ddee4e35b632e34e497"
+# Canonical authenticated API and the public, credential-free native entry point.
+CONTROL_API_BASE = "https://www.2560801.xyz/ott-control"
+CONTROL_PUBLIC_DISCOVERY_URL = "https://player.ottplay.here.now/ott-control/api/discovery"
+CONTROL_DISCOVERY_SHA256 = "0a3bf94cadba71fdd02af4783574ea4690de2839a3eaa05a2bea18a715eb2e4d"
 CONTROL_DISCOVERY_PATH = Path("local/control-discovery." + CONTROL_DISCOVERY_SHA256 + ".json")
 CONTROL_DISCOVERY_PATTERN = re.compile(r"local/control-discovery\.([0-9a-f]{64})\.json")
 MAX_DISCOVERY_BYTES = 8192
@@ -72,6 +75,12 @@ HOSTED_CONFIG = {
 }
 EXPECTED_PROXY = {
     "proxies": {
+        "/ott-control/api/discovery": {
+            "upstream": CONTROL_API_BASE + "/api/discovery",
+            "method": "GET",
+            "headers": {"Accept": "application/json", "User-Agent": "OTT-play-control-discovery/1.0"},
+            "rateLimit": "1200/hour/ip",
+        },
         "/ott-control/api/device-transport": {
             "upstream": "https://www.2560801.xyz/ott-control/api/device-transport",
             "method": "POST",
