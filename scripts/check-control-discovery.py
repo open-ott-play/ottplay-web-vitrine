@@ -2,6 +2,7 @@
 """Check public discovery against the reviewed, fingerprinted stage catalog."""
 import argparse
 import hashlib
+from http.client import HTTPException
 import json
 import os
 from pathlib import Path
@@ -95,7 +96,7 @@ def check(stage, *, upstream=False, open_url=None):
         code = error.code
         error.close()
         raise ProbeError("redirect_rejected" if 300 <= code < 400 else "http_status", code) from None
-    except (URLError, OSError):
+    except (URLError, OSError, HTTPException):
         raise ProbeError("transport_failed") from None
     if not raw or len(raw) > MAX_DISCOVERY_BYTES:
         raise ProbeError("response_size")

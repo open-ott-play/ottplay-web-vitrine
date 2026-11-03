@@ -1,6 +1,7 @@
 """Offline checks for the fixed, credential-free discovery publication probe."""
 import contextlib
 from email.message import Message
+from http.client import BadStatusLine, IncompleteRead
 import importlib.util
 import io
 import json
@@ -129,6 +130,26 @@ class ControlDiscoveryProbeTests(unittest.TestCase):
         for error in (URLError("secret upstream URL"), TimeoutError("private endpoint"), ssl.SSLError("secret")):
             caught = self.rejects(error, "transport_failed")
             self.assertEqual(caught.diagnostic, {"status": "failed", "reason": "transport_failed"})
+
+    def test_malformed_http_status_is_sanitized_without_retry(self):
+        caught = self.rejects(BadStatusLine("private upstream status line"), "transport_failed")
+        self.assertEqual(caught.diagnostic, {"status": "failed", "reason": "transport_failed"})
+        self.assertEqual(str(caught), "transport_failed")
+        self.assertTrue(caught.__suppress_context__)
+
+    def test_incomplete_http_body_returns_only_closed_cli_diagnostic(self):
+        response = Response(self.raw())
+        response.read = Mock(side_effect=IncompleteRead(b"private partial body", 100))
+        opener = Mock()
+        opener.open.return_value = response
+        output, errors = io.StringIO(), io.StringIO()
+        with patch.object(PROBE, "build_opener", return_value=opener), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            self.assertEqual(PROBE.main([str(self.stage)]), 1)
+        self.assertEqual(output.getvalue(), "")
+        self.assertEqual(json.loads(errors.getvalue()), {"status": "failed", "reason": "transport_failed"})
+        self.assertEqual(opener.open.call_count, 1, "incomplete response must not trigger another GET")
+        response.read.assert_called_once_with(PROBE.MAX_DISCOVERY_BYTES + 1)
 
     def test_response_byte_limit_and_empty_body(self):
         for raw in (b"", b" " * 8193):
