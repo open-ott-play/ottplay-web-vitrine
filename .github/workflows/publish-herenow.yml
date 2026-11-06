@@ -45,12 +45,12 @@ jobs:
     steps:
       - &id001
         name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
         with:
           egress-policy: audit
       - &id002
         name: Checkout exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
@@ -70,7 +70,7 @@ jobs:
         run: python3 scripts/browser_candidate.py pack dist browser-candidate "$RELEASE_TAG" "$RELEASE_MANIFEST_SHA256" "$RELEASE_CHANNEL"
       - name: Preserve the exact staged website
         id: candidate
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: staged-vitrine-${{ github.run_attempt }}
           path: browser-candidate/
@@ -82,7 +82,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/typescript-ci.yml@e71559f44e41f39ad0037bf13c7f43bbbb2ec9af
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/typescript-ci.yml@e71559f44e41f39ad0037bf13c7f43bbbb2ec9af # main
     with:
       force-full: true
       run-node-ci: false
@@ -111,7 +111,7 @@ jobs:
           HERENOW_API_KEY: ${{ secrets.HERENOW_API_KEY }}
         run: ': "${HERENOW_API_KEY:?Configure production environment credentials before publishing}"'
       - name: Download the browser-accepted staged website
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           artifact-ids: ${{ needs.prepare.outputs.artifact-id }}
           path: browser-candidate
@@ -121,7 +121,7 @@ jobs:
           CANDIDATE_MANIFEST_SHA256: ${{ needs.prepare.outputs.manifest-sha256 }}
         run: python3 scripts/browser_candidate.py unpack browser-candidate dist "$CANDIDATE_MANIFEST_SHA256"
       - name: Checkout pinned publishing dependency
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: heredotnow/skill
           ref: 8cf033ed53b82c0c67b16359c8c431f99e111d04
