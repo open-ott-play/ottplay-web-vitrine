@@ -13,7 +13,7 @@
   "visibility": "public",
   "single_entry_ci": true,
   "change_scope": {
-    "documentation_paths": [],
+    "documentation_paths": ["GOVERNANCE.md", "ROADMAP.md"],
     "required_paths": [],
     "always_validate_workflows": []
   }
