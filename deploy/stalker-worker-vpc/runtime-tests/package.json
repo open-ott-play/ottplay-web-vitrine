@@ -3,5 +3,5 @@
   "private": true,
   "version": "1.0.0",
   "scripts": { "test": "workerd test config.capnp" },
-  "devDependencies": { "workerd": "1.20261008.1" }
+  "devDependencies": { "workerd": "1.20261107.1" }
 }
