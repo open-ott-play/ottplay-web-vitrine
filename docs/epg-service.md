@@ -199,7 +199,7 @@ do not imply comparable single-thread performance across cluster nodes.
 The removed deployment manifest at
 `d4bd1f53af81c781c57e6567239d3a28fd6869c4:deploy/epg/ottplay-epg.yaml` is historical
 ownership evidence only. Its old image and readiness protocol are incompatible
-with this deployment contract. The previous [retirement runbook](epg-retirement.md)
+with this deployment contract. The previous [retirement runbook](archive/epg-retirement.md)
 must not be executed while the server-mode profile is live.
 
 ## Acceptance
