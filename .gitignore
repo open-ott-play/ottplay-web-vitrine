@@ -20,3 +20,4 @@ node_modules/
 # Browser acceptance diagnostics and staged candidates
 .compatibility/
 browser-candidate/
+A*S.md
