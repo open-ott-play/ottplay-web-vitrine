@@ -81,8 +81,16 @@ if [[ ! "$OTTPLAY_CURL_SECURITY_LEVEL" =~ ^[2-5]$ ]]; then
 fi
 export OTTPLAY_PUBLISH_CURL OTTPLAY_CURL_SECURITY_LEVEL
 curl() {
-  "$OTTPLAY_PUBLISH_CURL" --disable --tlsv1.2 --proto '=https' \
-    --ciphers "DEFAULT:@SECLEVEL=$OTTPLAY_CURL_SECURITY_LEVEL" "$@"
+  local -a policy=( --disable --tlsv1.2 --proto '=https'
+    --ciphers "DEFAULT:@SECLEVEL=$OTTPLAY_CURL_SECURITY_LEVEL" )
+  # The pinned publisher passes JSON as a final -d argument. Retained
+  # files can make an inventory larger than Linux's per-argument limit.
+  if (( $# >= 2 )) && [[ "${@: -2:1}" == -d && "${@: -1}" == \{* ]]; then
+    builtin printf '%s' "${@: -1}" |
+      "$OTTPLAY_PUBLISH_CURL" "${policy[@]}" "${@:1:$#-2}" --data-binary @-
+  else
+    "$OTTPLAY_PUBLISH_CURL" "${policy[@]}" "$@"
+  fi
 }
 export -f curl
 
