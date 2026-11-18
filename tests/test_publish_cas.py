@@ -43,8 +43,16 @@ state = Path.cwd() / ".herenow/state.json"
 record = {"method": method, "url": url, "cwd": str(Path.cwd()),
           "stateMode": stat.S_IMODE(state.stat().st_mode),
           "directoryMode": stat.S_IMODE(Path.cwd().stat().st_mode)}
-body = json.loads(args[args.index("-d") + 1]) if "-d" in args else None
-record["body"] = body
+if args[-2:] == ["--data-binary", "@-"]:
+    raw = sys.stdin.buffer.read()
+    record["bodyTransport"] = "stdin"
+elif "-d" in args:
+    raw = args[args.index("-d") + 1].encode()
+    record["bodyTransport"] = "argument"
+else:
+    raw = b""
+body = json.loads(raw) if raw else None
+record.update(body=body, bodyBytes=len(raw))
 record["sourcePath"] = json.loads(state.read_text())["publishes"]["liminal-sketch-vv8r"]["path"]
 assert Path(record["sourcePath"]).parent == Path.cwd()
 assert Path(record["sourcePath"]).name == "site"
@@ -256,6 +264,29 @@ class PublishCasTests(unittest.TestCase):
         self.assertEqual(files["demo/pattern.m3u8"]["contentType"], "application/vnd.apple.mpegurl")
         self.assertEqual(files["demo/pattern0.ts"]["contentType"], "video/mp2t")
         self.assertIn("publish_result.live_version_id=accepted-test-version", result.stderr)
+
+    def test_large_inventory_streams_full_body_without_losing_retained_assets(self):
+        folder = self.site / "assets"
+        for index in range(4):
+            folder /= f"catalog-{index}-" + "x" * 116
+        folder.mkdir(parents=True)
+        for index in range(200):
+            (folder / (f"movie-{index:03d}-" + "y" * 139 + ".js")).write_text("fixture")
+        self.stock = RETAIN.snapshot(self.site)
+
+        result, requests = self.publish()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([r["method"] for r in requests], ["PUT", "PUT", "POST"])
+        update, upload, finalize = requests
+        self.assertEqual(update["bodyTransport"], "stdin")
+        self.assertGreater(update["bodyBytes"], 128 * 1024)
+        self.assertEqual(update["body"]["baseVersionId"], VERSION)
+        self.assertEqual(
+            {row["path"] for row in update["body"]["files"]},
+            set(self.stock["files"]) | self.retained,
+        )
+        self.assertIsNone(upload["body"])
+        self.assertEqual(finalize["body"], {"versionId": "pending-test-version"})
 
     def test_owner_drift_or_pending_stops_before_any_publisher_mutation(self):
         for scenario in ("owner-drift", "owner-pending"):
